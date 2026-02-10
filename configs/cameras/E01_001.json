@@ -1,0 +1,42 @@
+{
+  "video_id": "E01_001",
+  "view_type": "oblique",
+  "policy_mode": "standard",
+  "roi": null,
+  "thresholds": {
+    "t_std": 0.2,
+    "t_any": 0.05,
+    "t_exit": 0.1,
+    "dwell_s": 1.5
+  },
+  "stabilization": {
+    "ema_alpha": 0.6,
+    "k_of_m_enter": [
+      3,
+      5
+    ],
+    "k_of_m_exit": [
+      2,
+      5
+    ],
+    "hysteresis_dilate_px": 12,
+    "cooldown_s": 5.0
+  },
+  "fallback": {
+    "enable_center_fallback": true,
+    "triggers": {
+      "small_px": 35,
+      "cut_margin_px": 15,
+      "jitter_toggle_th": 6
+    }
+  },
+  "health": {
+    "enable": true,
+    "low_light_th": 0.2,
+    "glare_th": 0.1,
+    "blur_th": 80,
+    "degrade_rules": {
+      "on_degrade": "strengthen_stabilization"
+    }
+  }
+}
