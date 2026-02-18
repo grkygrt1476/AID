@@ -6,6 +6,7 @@ env/
 # Project data/artifacts
 data/
 outputs/
+archive_local/
 *mp4
 *gif
 *pt
