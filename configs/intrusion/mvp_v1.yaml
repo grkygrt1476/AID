@@ -1,0 +1,17 @@
+score:
+  weights: { wd: 0.60, wo: 0.40, wg: 0.35 }
+  norms:
+    d0_ratio: 0.015
+    ov0: 0.15
+    g0_ratio: 0.01
+    g1_ratio: 0.02
+  band:
+    lower_ratio: 0.20
+fsm:
+  cand_thr: 0.35
+  in_thr: 0.60
+  out_thr: 0.25
+  enter_n: 2
+  in_n: 3
+  exit_n: 5
+  grace_sec: 2.0
