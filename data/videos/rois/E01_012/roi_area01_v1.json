@@ -1,0 +1,49 @@
+{
+  "video_id": "E01_012",
+  "roi_id": "roi_area01",
+  "roi_version": 1,
+  "vertices_px": [
+    [
+      1122,
+      548
+    ],
+    [
+      1208,
+      542
+    ],
+    [
+      1378,
+      952
+    ],
+    [
+      1278,
+      984
+    ]
+  ],
+  "image_size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "labeled_on": "disp",
+  "disp_wh": [
+    2560,
+    1440
+  ],
+  "transform": {
+    "scale": 0.6666666666666666,
+    "pad_x": 0,
+    "pad_y": 360,
+    "resized_w": 1280,
+    "resized_h": 720
+  },
+  "source_label": "data/videos/labels/E01_012.json",
+  "event_frame_used": [
+    1603,
+    2284
+  ],
+  "event_frame_used_padded": [
+    1603,
+    2284
+  ],
+  "created_at": "2026-02-22T23:59:54"
+}

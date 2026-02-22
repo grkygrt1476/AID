@@ -91,7 +91,12 @@ def compute_bbox_factors(
     sd = float(roi_cache.signed_dist[bc_yi, bc_xi])
 
     d0 = max(1e-6, float(cfg.d0_ratio) * float(max(image_w, image_h)))
-    f_dist = _clamp01((-sd) / d0)
+    d_in = d0
+    d_out = 2.0 * d0
+    if sd <= 0.0:
+        f_dist = _clamp01((-sd) / d_in)
+    else:
+        f_dist = _clamp01((d_out - sd) / d_out)
 
     bbox_h = max(1.0, y2 - y1)
     lower_ratio = _clamp(float(cfg.lower_ratio), 1e-6, 1.0)
