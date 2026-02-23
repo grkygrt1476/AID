@@ -85,7 +85,6 @@ class ServiceFsmContext:
     clip_start_sec: float
     video_id: str
     clip_path: str
-    viz_mode: str
     params_for_event: dict[str, Any]
     runtimes: dict[str, ServiceFsmRuntime]
     events_fp: Any
@@ -129,13 +128,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--grace_sec", type=float, default=2.0, help="Grace duration in seconds before exit counting starts.")
     parser.add_argument("--exit_thr", type=float, default=None, help="Exit threshold (defaults to cand_thr when omitted).")
     parser.add_argument("--events_jsonl", default="", help="Path to events.jsonl (default: <out_dir>/events.jsonl).")
-    parser.add_argument(
-        "--viz_mode",
-        choices=["score_all", "in_only", "event_only"],
-        default="score_all",
-        help="Visualization mode: score_all|in_only|event_only.",
-    )
-
     parser.add_argument("--dry_frames", type=int, default=60, help="Number of frames for dry run.")
     parser.add_argument("--dry_fps", type=float, default=10.0, help="FPS for dry run.")
     parser.add_argument("--dry_wh", default="640x360", help="Dry frame size. Example: 640x360")
@@ -903,7 +895,6 @@ def _build_service_fsm_context(
         clip_start_sec=float(clip_start_sec),
         video_id=str(video_id),
         clip_path=str(clip_path),
-        viz_mode=str(args.viz_mode),
         params_for_event=params_for_event,
         runtimes=runtimes,
         events_fp=events_fp,
@@ -969,7 +960,6 @@ def _process_frame(
     is_update_frame: bool = True,
     orig_frame: Optional[int] = None,
     service_ctx: Optional[ServiceFsmContext] = None,
-    viz_mode: str = "score_all",
 ) -> None:
     roi_rows: list[dict[str, Any]] = []
     h, w = frame.shape[:2]
@@ -1200,29 +1190,8 @@ def _process_frame(
             }
         )
 
-    viz_mode_eff = str(viz_mode).strip().lower() or "score_all"
-    if viz_mode_eff not in {"score_all", "in_only", "event_only"}:
-        viz_mode_eff = "score_all"
-    fsm_state_global: Optional[str] = None
-    if service_ctx is not None and bool(service_ctx.enabled) and rois:
-        rt0 = service_ctx.runtimes.get(rois[0].roi_id)
-        if rt0 is not None:
-            fsm_state_global = str(rt0.state)
-    if fsm_state_global is None and roi_draw_rows:
-        fsm_state_global = str(roi_draw_rows[0].get("state", STATE_OUT))
-
     bbox_draw_viz = list(bbox_draw)
-    if viz_mode_eff == "event_only":
-        bbox_draw_viz = []
-    elif viz_mode_eff == "in_only":
-        if (fsm_state_global != STATE_IN) or (not bbox_draw):
-            bbox_draw_viz = []
-        else:
-            rep_idx = max(range(len(bbox_draw)), key=lambda i: float(bbox_draw[i].get("score", 0.0)))
-            rep = dict(bbox_draw[rep_idx])
-            rep["state"] = STATE_IN
-            bbox_draw_viz = [rep]
-    elif bool(viz_rep_only) and bbox_draw:
+    if bool(viz_rep_only) and bbox_draw:
         rep_idx = max(range(len(bbox_draw)), key=lambda i: float(bbox_draw[i].get("score", 0.0)))
         masked: list[dict[str, Any]] = []
         for i, row in enumerate(bbox_draw):
@@ -1248,12 +1217,12 @@ def _process_frame(
             best_factors=row["best_factors"],
             roi_index=row["roi_index"],
             draw_out_bbox=draw_out_bbox,
-            draw_global=(int(row["roi_index"]) == 0 and viz_mode_eff != "event_only"),
+            draw_global=(int(row["roi_index"]) == 0),
             top_table_rows=table_rows,
             bbox_draw=bbox_draw_viz,
         )
 
-    if bool(draw_all_bbox) and viz_mode_eff == "score_all" and bbox_draw_viz:
+    if bool(draw_all_bbox) and bbox_draw_viz:
         _draw_out_bboxes_gray(frame, bbox_rows=bbox_draw_viz)
 
     if gt_state is not None and gt_orig_frame is not None:
@@ -1447,7 +1416,6 @@ def run_dry(
                 is_update_frame=True,
                 orig_frame=int(frame_idx),
                 service_ctx=service_ctx,
-                viz_mode=str(args.viz_mode),
             )
             writer.write(frame)
             if frame_idx % 15 == 0:
@@ -1489,7 +1457,6 @@ def run_dry(
         },
         "fsm_service": {
             "enabled": bool(args.fsm_enable),
-            "viz_mode": str(args.viz_mode),
             "num_events": int(service_ctx.num_events),
             "total_in_time_sec": float(service_ctx.total_in_time_sec),
         },
@@ -1647,9 +1614,8 @@ def run_real(
         score_weights=score_weights,
     )
     logger.info(
-        "service_fsm enabled=%s viz_mode=%s enter_n=%d enter_in_n=%d exit_n=%d grace_n=%d exit_thr=%.6f fps_src=%.6f clip_start_sec=%.6f",
+        "service_fsm enabled=%s enter_n=%d enter_in_n=%d exit_n=%d grace_n=%d exit_thr=%.6f fps_src=%.6f clip_start_sec=%.6f",
         bool(service_ctx.enabled),
-        str(service_ctx.viz_mode),
         int(service_ctx.enter_n),
         int(service_ctx.enter_in_n),
         int(service_ctx.exit_n),
@@ -1726,7 +1692,6 @@ def run_real(
                 is_update_frame=bool(is_update_frame),
                 orig_frame=int(orig_frame),
                 service_ctx=service_ctx,
-                viz_mode=str(args.viz_mode),
             )
             writer.write(frame)
             if frame_idx % 120 == 0:
@@ -1771,7 +1736,6 @@ def run_real(
         },
         "fsm_service": {
             "enabled": bool(args.fsm_enable),
-            "viz_mode": str(args.viz_mode),
             "video_id": str(video_id),
             "fps_src": float(fps_src_event),
             "clip_start_sec": float(clip_start_sec_event),
@@ -1872,8 +1836,8 @@ if __name__ == "__main__":
 
 # Usage examples:
 # 1) Clean demo (no bboxes)
-# python scripts/02_fsm/02_01_score_mvp_fsm.py --video path/to/input.mp4 --roi_json path/to/roi.json --det_jsonl path/to/dets.jsonl --fsm_enable --viz_mode event_only --enter_n 3 --enter_in_n 2 --exit_n 8 --grace_sec 2.0
+# python scripts/02_fsm/02_01_score_mvp_fsm.py --video path/to/input.mp4 --roi_json path/to/roi.json --det_jsonl path/to/dets.jsonl --fsm_enable --enter_n 3 --enter_in_n 2 --exit_n 8 --grace_sec 2.0
 # 2) Debug (all bboxes)
-# python scripts/02_fsm/02_01_score_mvp_fsm.py --video path/to/input.mp4 --roi_json path/to/roi.json --det_jsonl path/to/dets.jsonl --fsm_enable --viz_mode score_all
+# python scripts/02_fsm/02_01_score_mvp_fsm.py --video path/to/input.mp4 --roi_json path/to/roi.json --det_jsonl path/to/dets.jsonl --fsm_enable
 # 3) Only show red bbox when IN
-# python scripts/02_fsm/02_01_score_mvp_fsm.py --video path/to/input.mp4 --roi_json path/to/roi.json --det_jsonl path/to/dets.jsonl --fsm_enable --viz_mode in_only
+# python scripts/02_fsm/02_01_score_mvp_fsm.py --video path/to/input.mp4 --roi_json path/to/roi.json --det_jsonl path/to/dets.jsonl --fsm_enable --viz_rep_only
