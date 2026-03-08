@@ -45,3 +45,23 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+
+# local artifacts
+runs/
+outputs/
+__pycache__/
+.venv/
+
+# external repos
+/DeepStream-Yolo/
+/DeepStream-Yolo-clean/
+/deepstream_tao_apps/
+
+# generated model artifacts
+/weights/person/*.engine
+/weights/person/*.onnx
+/weights/person/*.onnx.data
+
+# accidental / temp
+/[UID
+/labels.txt
