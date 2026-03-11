@@ -65,3 +65,12 @@ __pycache__/
 # accidental / temp
 /[UID
 /labels.txt
+
+# Temporary files
+configs/deepstream/_tmp*
+outputs/deepstream_test/*.mp4
+deepstream_plugins/gst-dsholdbox/*.bak*
+deepstream_plugins/gst-dsholdbox/*.o
+deepstream_plugins/gst-dsholdbox/*.so
+deepstream_plugins/gst-dsholdbox/dsexample_lib/*.o
+deepstream_plugins/gst-dsholdbox/dsexample_lib/*.a
