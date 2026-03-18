@@ -5,8 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-import cv2
-import numpy as np
+try:
+    import cv2
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    cv2 = None  # type: ignore[assignment]
+
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    np = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -17,6 +24,19 @@ class RoiCache:
     signed_dist: np.ndarray
     integral: np.ndarray
     bottom_y: np.ndarray
+
+
+def _require_roi_deps() -> None:
+    missing: list[str] = []
+    if cv2 is None:
+        missing.append("opencv-python")
+    if np is None:
+        missing.append("numpy")
+    if missing:
+        raise RuntimeError(
+            "Missing required Python dependencies for ROI processing: "
+            + ", ".join(missing)
+        )
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -96,6 +116,7 @@ def _extract_vertices_px(obj: dict[str, Any], roi_path: Path) -> list[tuple[floa
 
 
 def load_roi_polygon(path: str | Path) -> np.ndarray:
+    _require_roi_deps()
     roi_path = Path(path)
     if not roi_path.exists():
         raise FileNotFoundError(f"ROI json not found: '{roi_path}'")
@@ -108,6 +129,7 @@ def load_roi_polygon(path: str | Path) -> np.ndarray:
 
 
 def build_roi_mask(poly: np.ndarray, width: int, height: int) -> np.ndarray:
+    _require_roi_deps()
     if width <= 0 or height <= 0:
         raise ValueError(f"Invalid image size for ROI mask: {width}x{height}")
     if poly.ndim != 2 or poly.shape[0] < 3 or poly.shape[1] != 2:
@@ -123,6 +145,7 @@ def build_roi_mask(poly: np.ndarray, width: int, height: int) -> np.ndarray:
 
 
 def build_signed_distance(mask: np.ndarray) -> np.ndarray:
+    _require_roi_deps()
     if mask.ndim != 2:
         raise ValueError("ROI mask must be 2D")
     roi = (mask > 0).astype(np.uint8)
@@ -135,6 +158,7 @@ def build_signed_distance(mask: np.ndarray) -> np.ndarray:
 
 
 def build_integral(mask: np.ndarray) -> np.ndarray:
+    _require_roi_deps()
     if mask.ndim != 2:
         raise ValueError("ROI mask must be 2D")
     roi = (mask > 0).astype(np.uint8)
@@ -143,6 +167,7 @@ def build_integral(mask: np.ndarray) -> np.ndarray:
 
 
 def build_roi_bottom_y(mask: np.ndarray) -> np.ndarray:
+    _require_roi_deps()
     if mask.ndim != 2:
         raise ValueError("ROI mask must be 2D")
     h, w = mask.shape
@@ -152,6 +177,7 @@ def build_roi_bottom_y(mask: np.ndarray) -> np.ndarray:
 
 
 def build_roi_cache(roi_id: str, poly: np.ndarray, width: int, height: int) -> RoiCache:
+    _require_roi_deps()
     mask = build_roi_mask(poly=poly, width=width, height=height)
     return RoiCache(
         roi_id=str(roi_id),
