@@ -92,14 +92,18 @@ DS_EXAMPLE_SECTION = {
 }
 STATE_BOX_COLORS = {
     STATE_OUT: (80, 235, 140),
-    STATE_CANDIDATE: (0, 165, 255),
-    STATE_IN_CONFIRMED: (0, 0, 255),
+    STATE_CANDIDATE: (0, 255, 255),
+    STATE_IN_CONFIRMED: (50, 50, 255),
 }
 STATE_TEXT_COLORS = {
     STATE_OUT: (210, 245, 220),
-    STATE_CANDIDATE: (170, 220, 255),
-    STATE_IN_CONFIRMED: (200, 205, 255),
+    STATE_CANDIDATE: (0, 255, 255),
+    STATE_IN_CONFIRMED: (100, 130, 255),
 }
+CONFIRM_ANKLE_COLOR = (0, 0, 255)
+CONFIRM_PROXY_COLOR = (0, 165, 255)
+CONFIRM_TEXT_ANKLE_COLOR = (180, 180, 255)
+CONFIRM_TEXT_PROXY_COLOR = (170, 220, 255)
 STATE_TOKEN_MAP = {
     STATE_OUT: "NORMAL",
     STATE_CANDIDATE: "CAND",
@@ -1122,6 +1126,7 @@ def summarize_frame_state(
 ) -> dict[str, Any]:
     candidate_count = 0
     confirmed_count = 0
+    confirm_basis = ""
 
     for record in frame_records.values():
         state = str(record.get("state", STATE_OUT))
@@ -1129,6 +1134,9 @@ def summarize_frame_state(
             candidate_count += 1
         elif state == STATE_IN_CONFIRMED:
             confirmed_count += 1
+            basis = resolve_confirm_display_basis(record)
+            if not confirm_basis or basis == "ankle":
+                confirm_basis = basis
 
     if roi_status != "loaded":
         global_state = "NO ROI"
@@ -1145,6 +1153,7 @@ def summarize_frame_state(
         "tracked_count": len(frame_rows),
         "candidate_count": candidate_count,
         "confirmed_count": confirmed_count,
+        "confirm_basis": confirm_basis,
     }
 
 
@@ -1166,12 +1175,14 @@ def select_track_ids_to_draw(
 
 def build_status_line(summary: dict[str, Any], roi_status: str) -> str:
     if roi_status != "loaded":
-        return f"NO ROI | O{summary['object_count']} T{summary['tracked_count']}"
-    return (
-        f"{summary['global_state']} | ROI ON | "
-        f"O{summary['object_count']} T{summary['tracked_count']} "
-        f"C{summary['candidate_count']} I{summary['confirmed_count']}"
-    )
+        return "NO ROI"
+    state = str(summary["global_state"])
+    if state == "INTRUSION":
+        basis = str(summary.get("confirm_basis", "")).strip()
+        if basis == "ankle(proxy)":
+            return "ANKLE (PROXY)"
+        return "ANKLE"
+    return state
 
 
 def extract_box_for_track(row: SidecarRow | None, record: dict[str, Any] | None) -> tuple[list[float] | None, bool]:
@@ -1202,6 +1213,44 @@ def normalize_pose_status(raw_status: str) -> str:
     return status
 
 
+def confirm_path_to_display_basis(confirm_path: str) -> str:
+    path = str(confirm_path).strip()
+    if path == "ankle_in_roi":
+        return "ankle"
+    if path == "klt_ankle_proxy_confirm":
+        return "ankle(proxy)"
+    if path in {
+        "lower_body_overlap_confirm",
+        "klt_bottom_center_proxy_confirm",
+        "klt_current_lowerband_confirm",
+        "klt_projected_bottom_center_confirm",
+        "display_continuity_confirm",
+        "klt_display_continuity_confirm",
+    }:
+        return "lower-body"
+    return ""
+
+
+def resolve_confirm_display_basis(record: dict[str, Any] | None) -> str:
+    if not isinstance(record, dict):
+        return ""
+    confirm = record.get("confirm", {})
+    if isinstance(confirm, dict):
+        active_basis = str(confirm.get("active_confirm_basis", "")).strip().lower()
+        if active_basis in {"ankle", "ankle(proxy)", "lower-body"}:
+            return active_basis
+        current_basis = str(confirm.get("confirm_basis", "")).strip().lower()
+        if current_basis in {"ankle", "ankle(proxy)", "lower-body"}:
+            return current_basis
+        derived = confirm_path_to_display_basis(str(confirm.get("confirm_path", "")))
+        if derived:
+            return derived
+    evidence = record.get("evidence", {})
+    if isinstance(evidence, dict) and bool(evidence.get("ankle_confirm")):
+        return "ankle"
+    return ""
+
+
 def resolve_pose_debug(
     *,
     ctx: RenderSourceContext,
@@ -1219,13 +1268,30 @@ def resolve_pose_debug(
             raw_status = str(confirm.get("status", "")).strip()
             ankles = confirm.get("ankles", [])
             ankles = ankles if isinstance(ankles, list) else []
-            if raw_status and not raw_status.startswith("pose_not_needed"):
-                debug = {
-                    "status": normalize_pose_status(raw_status),
-                    "status_raw": raw_status,
-                    "ankles": ankles,
-                    "attempted": bool(confirm.get("attempted")),
-                }
+            debug = {
+                "status": normalize_pose_status(raw_status),
+                "status_raw": raw_status,
+                "ankles": ankles,
+                "attempted": bool(confirm.get("attempted")),
+                "confirm_basis": resolve_confirm_display_basis(record),
+            }
+            anchor_xy = confirm.get("klt_anchor_xy", [])
+            if (
+                debug["confirm_basis"] == "head"
+                and isinstance(anchor_xy, list)
+                and len(anchor_xy) == 2
+            ):
+                try:
+                    debug["head_anchor"] = {
+                        "x": float(anchor_xy[0]),
+                        "y": float(anchor_xy[1]),
+                        "source": str(confirm.get("klt_anchor_source", "")).strip(),
+                        "kind": str(confirm.get("klt_anchor_kind", "")).strip(),
+                        "inside_roi": bool(confirm.get("klt_anchor_inside_roi")),
+                    }
+                except (TypeError, ValueError):
+                    pass
+            if ankles or "head_anchor" in debug or (raw_status and not raw_status.startswith("pose_not_needed")):
                 ctx.pose_debug_cache[track_id] = debug
                 return debug
 
@@ -1282,6 +1348,85 @@ def draw_pose_debug(
         cv2.circle(frame, (px, py), 6, color, -1, cv2.LINE_AA)
         cv2.circle(frame, (px, py), 10, (20, 20, 20), 1, cv2.LINE_AA)
 
+    head_anchor = pose_debug.get("head_anchor")
+    if isinstance(head_anchor, dict):
+        try:
+            head_point = (float(head_anchor["x"]), float(head_anchor["y"]))
+        except (KeyError, TypeError, ValueError):
+            head_point = None
+        if head_point is not None:
+            px, py = map_point_to_tile(head_point, fit, tile_origin=(0, 0))
+            head_margin_px = max(margin_px, min(20, int(round(min(box_w, box_h) * 0.14))))
+            if (
+                0 <= px < frame.shape[1]
+                and 0 <= py < frame.shape[0]
+                and (x1 - head_margin_px) <= px <= (x2 + head_margin_px)
+                and (y1 - head_margin_px) <= py <= (y2 + head_margin_px)
+            ):
+                head_inside_roi = bool(head_anchor.get("inside_roi"))
+                head_color = (255, 60, 60) if head_inside_roi else (255, 220, 0)
+                cv2.circle(frame, (px, py), 9, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.circle(frame, (px, py), 6, head_color, -1, cv2.LINE_AA)
+                cv2.circle(frame, (px, py), 12, (20, 20, 20), 1, cv2.LINE_AA)
+                cv2.line(frame, (px - 10, py), (px + 10, py), (20, 20, 20), 1, cv2.LINE_AA)
+                cv2.line(frame, (px, py - 10), (px, py + 10), (20, 20, 20), 1, cv2.LINE_AA)
+
+
+def resolve_confirm_ankle_point(record: dict[str, Any] | None) -> tuple[tuple[float, float] | None, str]:
+    """Return (point_xy_source, basis) for the ankle that triggered confirm.
+
+    basis is "ankle" for real ankle, "ankle(proxy)" for proxy ankle.
+    Returns (None, "") if no confirm ankle point is available.
+    """
+    if not isinstance(record, dict):
+        return None, ""
+    state = str(record.get("state", ""))
+    if state != STATE_IN_CONFIRMED:
+        return None, ""
+    confirm = record.get("confirm", {})
+    if not isinstance(confirm, dict):
+        return None, ""
+    basis = resolve_confirm_display_basis(record)
+    if basis == "ankle":
+        ankles = confirm.get("ankles", [])
+        if isinstance(ankles, list):
+            for ankle in ankles:
+                if isinstance(ankle, dict) and bool(ankle.get("inside_roi")):
+                    try:
+                        return (float(ankle["x"]), float(ankle["y"])), "ankle"
+                    except (KeyError, TypeError, ValueError):
+                        continue
+    elif basis == "ankle(proxy)":
+        proxy_points = confirm.get("klt_ankle_proxy_points", [])
+        if isinstance(proxy_points, list):
+            for point in proxy_points:
+                if isinstance(point, dict) and bool(point.get("inside_roi")):
+                    try:
+                        return (float(point["x"]), float(point["y"])), "ankle(proxy)"
+                    except (KeyError, TypeError, ValueError):
+                        continue
+    return None, ""
+
+
+def draw_confirm_ankle_point(
+    frame: Any,
+    *,
+    fit: FitRect,
+    record: dict[str, Any] | None,
+) -> None:
+    """Draw the confirm ankle point prominently: red for real ankle, orange for proxy."""
+    assert cv2 is not None
+    point_xy, basis = resolve_confirm_ankle_point(record)
+    if point_xy is None:
+        return
+    px, py = map_point_to_tile(point_xy, fit, tile_origin=(0, 0))
+    if px < 0 or py < 0 or px >= frame.shape[1] or py >= frame.shape[0]:
+        return
+    color = CONFIRM_ANKLE_COLOR if basis == "ankle" else CONFIRM_PROXY_COLOR
+    cv2.circle(frame, (px, py), 12, (255, 255, 255), -1, cv2.LINE_AA)
+    cv2.circle(frame, (px, py), 9, color, -1, cv2.LINE_AA)
+    cv2.circle(frame, (px, py), 14, (20, 20, 20), 2, cv2.LINE_AA)
+
 
 def draw_track_box(
     frame: Any,
@@ -1297,19 +1442,21 @@ def draw_track_box(
     x1, y1, x2, y2 = mapped_box
     box_color = STATE_BOX_COLORS.get(state, STATE_BOX_COLORS[STATE_OUT])
     text_color = STATE_TEXT_COLORS.get(state, (240, 240, 240))
-    thickness = 4 if state == STATE_IN_CONFIRMED else 3 if state == STATE_CANDIDATE else 2
+    thickness = 4 if state == STATE_IN_CONFIRMED else (3 if state == STATE_CANDIDATE else 2)
 
     cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, thickness, cv2.LINE_AA)
-    if state == STATE_IN_CONFIRMED:
-        cv2.rectangle(frame, (x1 + 2, y1 + 2), (x2 - 2, y2 - 2), (255, 255, 255), 1, cv2.LINE_AA)
 
     label_parts = [f"T{track_id}", STATE_TOKEN_MAP.get(state, "NORMAL")]
-    if from_record_only:
+    if from_record_only and state != STATE_IN_CONFIRMED:
         label_parts.append("grace")
     if record is not None:
-        evidence = record.get("evidence", {})
-        if isinstance(evidence, dict) and bool(evidence.get("ankle_confirm")):
-            label_parts.append("ankle")
+        confirm_basis = resolve_confirm_display_basis(record)
+        if state == STATE_IN_CONFIRMED and confirm_basis:
+            label_parts.append(confirm_basis.upper())
+        else:
+            evidence = record.get("evidence", {})
+            if isinstance(evidence, dict) and bool(evidence.get("ankle_confirm")):
+                label_parts.append("ankle")
     elif row is not None:
         label_parts.append("track")
 
@@ -1402,9 +1549,17 @@ def render_tile(
             state=state,
             pose_debug=pose_debug,
         )
+        if state == STATE_IN_CONFIRMED:
+            draw_confirm_ankle_point(
+                tile,
+                fit=fit,
+                record=record,
+            )
 
-    if summary["confirmed_count"] > 0:
-        cv2.rectangle(tile, (1, 1), (tile_w - 2, tile_h - 2), (0, 0, 255), 3, cv2.LINE_AA)
+    if summary["global_state"] == "INTRUSION":
+        basis = str(summary.get("confirm_basis", "")).strip()
+        border_color = CONFIRM_PROXY_COLOR if basis == "ankle(proxy)" else CONFIRM_ANKLE_COLOR
+        cv2.rectangle(tile, (0, 0), (tile_w - 1, tile_h - 1), border_color, 4, cv2.LINE_AA)
 
     _draw_text_chip(
         tile,
@@ -1421,9 +1576,13 @@ def render_tile(
     status_line = "ENDED" if frame is None and not ctx.active else build_status_line(summary, ctx.overlay.roi_status)
     status_color = (220, 220, 220)
     if summary["global_state"] == "CAND":
-        status_color = (170, 220, 255)
+        status_color = (0, 255, 255)
     elif summary["global_state"] == "INTRUSION":
-        status_color = (200, 205, 255)
+        basis = str(summary.get("confirm_basis", "")).strip()
+        if basis == "ankle(proxy)":
+            status_color = CONFIRM_TEXT_PROXY_COLOR
+        else:
+            status_color = CONFIRM_TEXT_ANKLE_COLOR
     elif summary["global_state"] == "NORMAL":
         status_color = (210, 245, 220)
 
