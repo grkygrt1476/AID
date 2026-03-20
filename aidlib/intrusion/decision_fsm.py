@@ -316,6 +316,9 @@ class DecisionParams:
     klt_continuity_bonus_proxy_age_frames: int = 20
     klt_continuity_bonus_recent_real_max_frames: int = 20
     klt_continuity_bonus_min_tracked_points: int = 10
+    klt_continuity_strong_proxy_age_frames: int = 40
+    klt_continuity_strong_min_tracked_points: int = 14
+    klt_continuity_strong_min_flow_mag: float = 0.3
     klt_confirm_min_tracked_points: int = 6
     klt_confirm_min_flow_mag: float = 0.75
     klt_confirm_boundary_max_distance_px: float = 72.0
@@ -879,15 +882,15 @@ def klt_proxy_age_limit(
 ) -> tuple[int, bool]:
     base_age = max(1, int(params.klt_continuity_max_proxy_age_frames))
     bonus_age = max(base_age, int(params.klt_continuity_bonus_proxy_age_frames))
+    strong_age = max(bonus_age, int(params.klt_continuity_strong_proxy_age_frames))
     if (
         row is None
         or row.mode != "proxy"
         or not row.proxy_active
         or int(row.proxy_age) <= base_age
-        or bonus_age <= base_age
     ):
         return base_age, False
-    if int(row.proxy_age) > bonus_age:
+    if int(row.proxy_age) > strong_age:
         return base_age, False
 
     anchor_source, _ = classify_klt_anchor_source(str(row.pose_anchor_source or row.patch_source or "").strip())
@@ -898,10 +901,13 @@ def klt_proxy_age_limit(
             int(params.klt_continuity_bonus_min_tracked_points),
         )
     )
-    recent_real_ok = bool(
-        state.last_real_frame is not None
-        and (int(frame_num) - int(state.last_real_frame))
-        <= max(base_age, int(params.klt_continuity_bonus_recent_real_max_frames))
+    real_gap = (
+        (int(frame_num) - int(state.last_real_frame))
+        if state.last_real_frame is not None
+        else 999999
+    )
+    recent_real_bonus_ok = bool(
+        real_gap <= max(base_age, int(params.klt_continuity_bonus_recent_real_max_frames))
     )
     boundary_context_ok = bool(
         recent_candidate_context_ok
@@ -927,14 +933,28 @@ def klt_proxy_age_limit(
             or float(evidence.bbox_overlap) >= float(params.candidate_iou_or_overlap_thr)
         )
     )
-    bonus_ok = bool(
+    base_quality_ok = bool(
         upper_anchor_valid
         and tracked_points_ok
-        and recent_real_ok
         and boundary_context_ok
         and motion_compatible_ok
     )
-    return (bonus_age if bonus_ok else base_age), bonus_ok
+    if not base_quality_ok:
+        return base_age, False
+    # Strong tier: proxy_age beyond bonus_age — require higher KLT quality
+    # and allow the recent_real window to extend to strong_age
+    if int(row.proxy_age) > bonus_age:
+        recent_real_strong_ok = bool(real_gap <= strong_age)
+        flow_mag = float(row.flow_mag) if row.flow_mag else (abs(float(row.flow_dx)) + abs(float(row.flow_dy)))
+        strong_points_ok = row.tracked_points >= int(params.klt_continuity_strong_min_tracked_points)
+        strong_flow_ok = flow_mag >= float(params.klt_continuity_strong_min_flow_mag)
+        if recent_real_strong_ok and strong_points_ok and strong_flow_ok:
+            return strong_age, True
+        return base_age, False
+    # Bonus tier: requires recent_real within bonus window
+    if not recent_real_bonus_ok:
+        return base_age, False
+    return bonus_age, True
 
 
 def row_has_loss_hint(row: SidecarRow | None) -> bool:
@@ -2758,6 +2778,9 @@ def run_intrusion_decision_pass(
                 params.klt_continuity_bonus_recent_real_max_frames
             ),
             "klt_continuity_bonus_min_tracked_points": int(params.klt_continuity_bonus_min_tracked_points),
+            "klt_continuity_strong_proxy_age_frames": int(params.klt_continuity_strong_proxy_age_frames),
+            "klt_continuity_strong_min_tracked_points": int(params.klt_continuity_strong_min_tracked_points),
+            "klt_continuity_strong_min_flow_mag": float(params.klt_continuity_strong_min_flow_mag),
             "klt_confirm_min_tracked_points": int(params.klt_confirm_min_tracked_points),
             "klt_confirm_min_flow_mag": float(params.klt_confirm_min_flow_mag),
             "klt_confirm_boundary_max_distance_px": float(params.klt_confirm_boundary_max_distance_px),

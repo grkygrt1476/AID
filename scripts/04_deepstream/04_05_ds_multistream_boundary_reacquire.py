@@ -941,16 +941,24 @@ def klt_proxy_bonus_age_allowed(
     tracked_points: int,
     params: DecisionParams,
     min_good_points: int,
+    flow_mag: float = 0.0,
 ) -> bool:
     base_age = max(1, int(params.klt_continuity_max_proxy_age_frames))
     bonus_age = max(base_age, int(params.klt_continuity_bonus_proxy_age_frames))
+    strong_age = max(bonus_age, int(params.klt_continuity_strong_proxy_age_frames))
     if miss_frames <= base_age:
         return True
-    if miss_frames > bonus_age:
-        return False
     anchor_valid = bool(
         is_headlike_source(state.pose_anchor_source) or is_shoulder_source(state.pose_anchor_source)
     )
+    # Strong tier: beyond bonus_age, require higher KLT quality
+    if miss_frames > bonus_age:
+        if miss_frames > strong_age:
+            return False
+        strong_points_ok = tracked_points >= int(params.klt_continuity_strong_min_tracked_points)
+        strong_flow_ok = float(flow_mag) >= float(params.klt_continuity_strong_min_flow_mag)
+        return bool(anchor_valid and strong_points_ok and strong_flow_ok)
+    # Bonus tier
     tracked_points_ok = bool(
         tracked_points >= max(int(min_good_points), int(params.klt_continuity_bonus_min_tracked_points))
     )
@@ -1302,6 +1310,7 @@ def klt_chain_is_reliably_active(
         1,
         int(params.klt_continuity_max_proxy_age_frames),
         int(params.klt_continuity_bonus_proxy_age_frames),
+        int(params.klt_continuity_strong_proxy_age_frames),
     )
     return bool(
         miss_frames > 0
@@ -1906,6 +1915,7 @@ def augment_split_sidecar_with_klt_continuity(
         int(params.klt_continuity_max_proxy_age_frames),
     )
     bonus_proxy_age_frames = max(base_proxy_age_frames, int(params.klt_continuity_bonus_proxy_age_frames))
+    strong_proxy_age_frames = max(bonus_proxy_age_frames, int(params.klt_continuity_strong_proxy_age_frames))
 
     # Display continuity: extend frozen bbox rows past the KLT proxy age limit
     # so the FSM can evaluate relaxed confirm geometry for boundary hard-cases.
@@ -2186,7 +2196,7 @@ def augment_split_sidecar_with_klt_continuity(
                     continue
 
                 miss_frames = int(frame_num) - int(state.last_real_frame)
-                if miss_frames <= 0 or miss_frames > bonus_proxy_age_frames:
+                if miss_frames <= 0 or miss_frames > strong_proxy_age_frames:
                     if (
                         miss_frames > 0
                         and box_has_area(state.last_bbox_xyxy)
@@ -2323,6 +2333,7 @@ def augment_split_sidecar_with_klt_continuity(
                     tracked_points=int(proxy_step["tracked_points"]),
                     params=params,
                     min_good_points=min_good_points,
+                    flow_mag=float(proxy_step.get("flow_mag", 0.0)),
                 ):
                     if (
                         box_has_area(state.last_bbox_xyxy)
@@ -2497,6 +2508,7 @@ def augment_split_sidecar_with_klt_continuity(
         "max_proxy_age_frames": int(max_proxy_age),
         "base_proxy_age_frames": int(base_proxy_age_frames),
         "bonus_proxy_age_frames": int(bonus_proxy_age_frames),
+        "strong_proxy_age_frames": int(strong_proxy_age_frames),
         "min_good_points": int(min_good_points),
         "max_shift_px": float(max_shift_px),
         "display_continuity_rows": int(stats["display_continuity_rows"]),
@@ -3005,11 +3017,13 @@ def render_tile(
         ).reshape((-1, 1, 2))
         cv2.polylines(tile, [mapped_poly], isClosed=True, color=(90, 220, 230), thickness=2, lineType=cv2.LINE_AA)
 
-    for track_id in stage0403.select_track_ids_to_draw(
+    draw_track_ids = stage0403.select_track_ids_to_draw(
         frame_rows=frame_rows,
         frame_records=frame_records,
         max_tracks_to_draw=stage0403.MAX_TRACKS_TO_DRAW,
-    ):
+    )
+
+    for track_id in draw_track_ids:
         row = frame_rows.get(track_id)
         record = frame_records.get(track_id)
         state = str(record.get("state", STATE_OUT)) if record is not None else STATE_OUT
@@ -3081,7 +3095,21 @@ def render_tile(
                             crop_asset=ctx.crop_asset,
                         )
                         if real_detection is not None:
-                            if should_refresh_from_detection(real_detection, cfg):
+                            # --- Actor-ownership guard (probe path) ---
+                            # Reject probe detection if it overlaps another
+                            # track's real/proxy sidecar row on this frame.
+                            _PROBE_OTHER_IOU_REJECT = 0.25
+                            for _other_tid, _other_row in frame_rows.items():
+                                if _other_tid == track_id:
+                                    continue
+                                if _other_row is None or not _other_row.has_valid_bbox:
+                                    continue
+                                if _other_row.mode not in ("real", "proxy", "frozen_hold"):
+                                    continue
+                                if bbox_iou(real_detection.bbox_source_xyxy, list(_other_row.bbox_xyxy)) >= _PROBE_OTHER_IOU_REJECT:
+                                    real_detection = None
+                                    break
+                            if real_detection is not None and should_refresh_from_detection(real_detection, cfg):
                                 refresh_memory_from_detection(
                                     memory=memory,
                                     frame_num=frame_num,
@@ -3095,7 +3123,7 @@ def render_tile(
                                 assert isinstance(refresh_sources, Counter)
                                 refresh_modes["real_bbox_probe"] += 1
                                 refresh_sources[real_detection.upper_anchor_source or "none"] += 1
-                            elif memory.last_kp_refresh_frame >= 0:
+                            elif real_detection is not None and memory.last_kp_refresh_frame >= 0:
                                 memory.last_kp_bbox_xyxy = list(real_detection.bbox_source_xyxy)
                                 memory.last_kp_keypoints_source = list(real_detection.keypoints_source)
                                 memory.last_boundary_distance_px = compute_boundary_distance(real_detection.bbox_source_xyxy, ctx.overlay)
@@ -3168,6 +3196,22 @@ def render_tile(
                 else:
                     stats["heavy_model_kp_hold_preserved"] = int(stats["heavy_model_kp_hold_preserved"]) + 1
                     detection = None
+            # --- Actor-ownership guard ---
+            # Reject reacquire detection if it overlaps another track's real
+            # sidecar row on this frame.  Prevents a confirmed track from
+            # borrowing a nearby but distinct actor's bbox.
+            if detection is not None:
+                _OTHER_TRACK_IOU_REJECT = 0.25
+                for _other_tid, _other_row in frame_rows.items():
+                    if _other_tid == track_id:
+                        continue
+                    if _other_row is None or not _other_row.has_valid_bbox:
+                        continue
+                    if _other_row.mode not in ("real", "proxy", "frozen_hold"):
+                        continue
+                    if bbox_iou(detection.bbox_source_xyxy, list(_other_row.bbox_xyxy)) >= _OTHER_TRACK_IOU_REJECT:
+                        detection = None
+                        break
             if detection is not None:
                 memory.last_reacquire_bbox_xyxy = list(detection.bbox_source_xyxy)
                 memory.last_reacquire_keypoints_source = list(detection.keypoints_source)
