@@ -74,3 +74,12 @@ deepstream_plugins/gst-dsholdbox/*.o
 deepstream_plugins/gst-dsholdbox/*.so
 deepstream_plugins/gst-dsholdbox/dsexample_lib/*.o
 deepstream_plugins/gst-dsholdbox/dsexample_lib/*.a
+
+# Root-level generated engine files
+/*.engine
+
+# Plugin build artifacts (Stage 03 / 04)
+scripts/03_deepstream/gst-*/*.o
+scripts/03_deepstream/gst-*/*.so
+scripts/04_deepstream/gst-*/*.o
+scripts/04_deepstream/gst-*/*.so
