@@ -92,3 +92,5 @@ scripts/04_ds_multi_stream/gst-*/*.so
 
 # local weights
 scripts/weights/
+configs/rois/
+data/videos/rois/
