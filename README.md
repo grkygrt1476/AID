@@ -175,9 +175,9 @@ A render-side model budget cap was also tested. While it achieved similar throug
 
 ## Further technical details
 
-- `docs/stage03/README.md` -- Stage 03 single-stream semantics: the continuity-vs-truth problem, why event-level intrusion is harder than per-frame detection, and how the FSM confirmation logic was developed in a controlled single-stream setting before being carried to multistream.
-- `docs/stage04/README.md` -- Stage 04 multistream architecture and the 16-channel benchmark: pipeline structure, runner/core separation, bottleneck interpretation, and how to read the benchmark results.
-- `docs/stage04/16ch_benchmark_table.md` -- 16-channel optimization progression and comparison table, including the step-by-step throughput improvements from the initial worst-case burst baseline to the final B1/B2 variants.
+- [Stage 03 notes](docs/stage03/README.md) -- Stage 03 single-stream semantics: the continuity-vs-truth problem, why event-level intrusion is harder than per-frame detection, and how the FSM confirmation logic was developed in a controlled single-stream setting before being carried to multistream.
+- [Stage 04 notes](docs/stage04/README.md) -- Stage 04 multistream architecture and the 16-channel benchmark: pipeline structure, runner/core separation, bottleneck interpretation, and how to read the benchmark results.
+- [16-channel benchmark table](docs/stage04/16ch_benchmark_table.md) -- 16-channel optimization progression and comparison table, including the step-by-step throughput improvements from the initial worst-case burst baseline to the final B1/B2 variants.
 
 ## Data source and attribution
 
