@@ -136,6 +136,10 @@ The public repository focuses on the pipeline design, stage structure, and bench
 
 ## 16-channel burst benchmark
 
+<p align="center">
+  <img src="docs/assets/stage04_16ch_benchmark_snapshot.jpg" alt="16-channel benchmark tiled snapshot" width="900">
+</p>
+
 After the core Stage 04 multistream pipeline was working end-to-end on four sources, the system was stress-tested with a 16-channel synchronized intrusion burst benchmark.
 
 This was not the primary project deliverable. It was a validation and scalability extension designed to answer a practical question: how does the full boundary-aware pipeline behave when every source is simultaneously running through the expensive confirmation path?
@@ -166,6 +170,7 @@ A render-side model budget cap was also tested. While it achieved similar throug
 
 - `docs/stage03/README.md` -- Stage 03 single-stream semantics: the continuity-vs-truth problem, why event-level intrusion is harder than per-frame detection, and how the FSM confirmation logic was developed in a controlled single-stream setting before being carried to multistream.
 - `docs/stage04/README.md` -- Stage 04 multistream architecture and the 16-channel benchmark: pipeline structure, runner/core separation, bottleneck interpretation, and how to read the benchmark results.
+- `docs/stage04/16ch_benchmark_table.md` -- 16-channel optimization progression and comparison table, including the step-by-step throughput improvements from the initial worst-case burst baseline to the final B1/B2 variants.
 
 ## Data source and attribution
 
