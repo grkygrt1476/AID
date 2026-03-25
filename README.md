@@ -5,6 +5,8 @@ The system determines whether a person has entered a defined ROI (for example, a
 
 The main challenge is not person detection by itself, but maintaining reliable intrusion judgment when a person is only partially visible or temporarily lost near the ROI boundary.
 
+ROI definitions, private run artifacts, and dataset-derived intermediate files are intentionally omitted from the public repository.
+
 ## Why this is difficult
 
 A naive intrusion rule asks only whether a detected person box overlaps the ROI.
@@ -50,7 +52,7 @@ When the detector loses a person near the ROI boundary, KLT optical flow helps c
 
 | Stage | Purpose | Key output |
 |-------|---------|------------|
-| 00 | Data prep: clip extraction, ROI labeling | ROI polygon JSONs |
+| 00 | Data prep: clip extraction, ROI labeling | Clip and metadata preparation tools |
 | 01 | Baseline YOLO + ByteTrack tracking | Single-clip tracked video |
 | 02 | KLT and pose-patch continuity experiments | Continuity-augmented sidecars |
 | 03 | DeepStream single-stream proving stage | Single-stream intrusion events |
@@ -105,7 +107,7 @@ configs/
 
 ```
 
-Note: the source directories were renamed to 03_ds_single_stream and 04_ds_multi_stream for clarity. Existing historical outputs and logs may still remain under outputs/03_deepstream and outputs/04_deepstream for backward compatibility.
+Note: the source directories were renamed to `03_ds_single_stream` and `04_ds_multi_stream` for clarity. Historical naming may still appear in code comments, logs, or older commit history, even though private run artifacts are omitted from the public repository.
 
 ## Evidence
 
@@ -116,7 +118,7 @@ Representative Stage 04 runs produce the following artifacts:
 - `intrusion_summary.json` -- per-source summary including confirmed event count, decision parameters, and sidecar statistics
 - `*_tiled_boundary_reacquire.mp4` -- 2x2 tiled visualization across all 4 sources
 
-A useful evaluation slice for this repository is a Stage 03 vs Stage 04 comparison on the same clip, together with per-clip ground-truth intrusion counts versus confirmed event counts.
+The public repository focuses on the pipeline design, stage structure, and benchmark interpretation rather than shipping private run artifacts.
 
 ## Tech stack
 
@@ -161,8 +163,6 @@ A render-side model budget cap was also tested. While it achieved similar throug
 - `docs/stage03/README.md` -- Stage 03 single-stream semantics: the continuity-vs-truth problem, why event-level intrusion is harder than per-frame detection, and how the FSM confirmation logic was developed in a controlled single-stream setting before being carried to multistream.
 - `docs/stage04/README.md` -- Stage 04 multistream architecture and the 16-channel benchmark: pipeline structure, runner/core separation, bottleneck interpretation, and how to read the benchmark results.
 
-Further internal notes on decision FSM fields, sidecar row semantics, and render-side recovery logic may be documented in `docs/STAGE04_INTERNALS.md` in the future.
-
 ## Data source and attribution
 
 - Some demo visuals in this portfolio were generated from AI-Hub data.
@@ -174,4 +174,3 @@ Further internal notes on decision FSM fields, sidecar row semantics, and render
 ## License
 
 This repository is shared as a personal portfolio project. All rights reserved.
-
