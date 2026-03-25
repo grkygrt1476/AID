@@ -1,0 +1,53 @@
+name: baseline_ev00_nvdcf_holdbox
+video: data/clips/E01_001/ev00_f1826-2854_50s.mp4
+roi: configs/rois/E01_001/roi_area01_v1_fix.json
+detector:
+  model: weights/person/yolo11s.pt
+  input_size: 960
+  conf: 0.35
+  iou: 0.45
+  class_ids:
+  - 0
+tracker_baseline:
+  type: NvDCF_VPI
+  tracker_width: 960
+  tracker_height: 544
+  interval: 0
+  min_detector_conf: 0.043
+  min_tracker_conf: 0.4009
+  probation_age: 2
+  max_shadow_tracking_age: 51
+  early_termination_age: 1
+display:
+  hold_seconds: 0.5
+  render_deadband_center_px: 3.0
+  render_deadband_size_px: 2.0
+  render_smoothing_alpha: 0.35
+  stabilize_real_boxes: true
+  stabilize_proxy_boxes: true
+  enable_overlap_early_retire: true
+  overlap_retire_iou_thr: 0.60
+  overlap_retire_center_px_thr: 20.0
+  overlap_retire_consecutive_frames: 2
+pose:
+  stale_motion_px_thr: 1.5
+  stale_center_px_thr: 2.0
+  stale_seconds: 2.0
+  proxy_min_good_points: 5
+
+test_segments:
+- - 12.0
+  - 16.0
+- - 21.5
+  - 24.0
+klt:
+  max_miss_frames: 20
+  patch_scale: 1.8
+  max_translation_px: 45.0
+  center_ratio: 0.55
+  top_center_ratio: 0.45
+  top_anchor_ratio: 0.3
+notes:
+- deepstream dsexample holdbox baseline
+- used for KLT parity experiment
+candidate_overlap_thr: 0.0

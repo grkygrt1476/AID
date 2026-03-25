@@ -1,0 +1,21 @@
+{
+  "override_version": 1,
+  "default_policy": {
+    "compatibility_group": "default",
+    "requires_isolated_batch": false,
+    "ds_config_template": "configs/deepstream/16ch/ds_multistream_16ch_boundary_reacquire.txt",
+    "extra_core_args": [],
+    "tags": ["default"],
+    "notes": "Milestone 1 default runner policy."
+  },
+  "source_overrides": {
+    "E01_004": {
+      "compatibility_group": "default",
+      "requires_isolated_batch": false,
+      "ds_config_template": "configs/deepstream/16ch/ds_multistream_16ch_boundary_reacquire.txt",
+      "extra_core_args": [],
+      "tags": ["resolution_exception"],
+      "notes": "Explicitly represented because this source uses 1280x720 geometry."
+    }
+  }
+}

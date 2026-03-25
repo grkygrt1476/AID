@@ -1,0 +1,35 @@
+name: baseline_ev00_pose_patch
+
+candidate_overlap_thr: 0.0
+
+display:
+  hold_seconds: 0.3
+
+pose:
+  model: yolo11s-pose.pt
+  proxy_survival_mode: track_alive
+  refresh_frames: 1
+  conf: 0.25
+  keypoint_conf: 0.2
+  anchor: head_shoulder_center
+
+  max_miss_frames: 3
+  max_translation_px: 60
+
+  patch_width_ratio: 0.65
+  patch_height_ratio: 0.58
+  patch_width_ratio_min: 0.35
+  patch_width_ratio_max: 0.9
+  patch_height_ratio_min: 0.32
+  patch_height_ratio_max: 0.85
+
+  shoulder_width_scale: 1.9
+  shoulder_height_scale: 2.2
+  torso_height_scale: 0.65
+  patch_y_offset_ratio: 0.10
+
+  min_crop_size_px: 32
+  min_patch_size_px: 24
+
+  proxy_survival_mode: track_alive
+  proxy_fail_tolerance: 3

@@ -79,7 +79,16 @@ deepstream_plugins/gst-dsholdbox/dsexample_lib/*.a
 /*.engine
 
 # Plugin build artifacts (Stage 03 / 04)
-scripts/03_deepstream/gst-*/*.o
-scripts/03_deepstream/gst-*/*.so
-scripts/04_deepstream/gst-*/*.o
-scripts/04_deepstream/gst-*/*.so
+scripts/03_ds_single_stream/gst-*/*.o
+scripts/03_ds_single_stream/gst-*/*.so
+scripts/04_ds_multi_stream/gst-*/*.o
+scripts/04_ds_multi_stream/gst-*/*.so
+
+# local engine backups
+*.engine.bak
+
+# Windows metadata
+*:Zone.Identifier
+
+# local weights
+scripts/weights/

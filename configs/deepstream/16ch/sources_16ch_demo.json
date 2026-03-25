@@ -1,0 +1,152 @@
+{
+  "manifest_version": 1,
+  "manifest_name": "stage04_16ch_demo_set_v1",
+  "runner_profile": "16ch_demo",
+  "core_batch_size": 16,
+  "sources": [
+    {
+      "source_id": "E01_001",
+      "artifact_name": "E01_001__ev00_f1826-2854_50s",
+      "video_path": "data/clips/E01_001/ev00_f1826-2854_50s.mp4",
+      "roi_json": "configs/rois/E01_001/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "clean_success", "demo_priority"],
+      "notes": "Baseline Stage 04 source."
+    },
+    {
+      "source_id": "E01_004",
+      "artifact_name": "E01_004__ev00_f1803-1868_50s",
+      "video_path": "data/clips/E01_004/ev00_f1803-1868_50s.mp4",
+      "roi_json": "configs/rois/E01_004/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "resolution_exception", "demo_priority"],
+      "notes": "Resolution exception source retained explicitly for validation coverage."
+    },
+    {
+      "source_id": "E01_008",
+      "artifact_name": "E01_008__ev00_f1899-2191_50s",
+      "video_path": "data/clips/E01_008/ev00_f1899-2191_50s.mp4",
+      "roi_json": "configs/rois/E01_008/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "clean_success", "demo_priority"],
+      "notes": "Baseline Stage 04 source."
+    },
+    {
+      "source_id": "E01_011",
+      "artifact_name": "E01_011__ev00_f2031-2293_50s",
+      "video_path": "data/clips/E01_011/ev00_f2031-2293_50s.mp4",
+      "roi_json": "configs/rois/E01_011/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "clean_success", "demo_priority"],
+      "notes": "Baseline Stage 04 source."
+    },
+    {
+      "source_id": "E01_002",
+      "artifact_name": "E01_002__ev00_f1749-2284_50s",
+      "video_path": "data/clips/E01_002/ev00_f1749-2284_50s.mp4",
+      "roi_json": "configs/rois/E01_002/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_003",
+      "artifact_name": "E01_003__ev00_f1402-2387_50s",
+      "video_path": "data/clips/E01_003/ev00_f1402-2387_50s.mp4",
+      "roi_json": "configs/rois/E01_003/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_005",
+      "artifact_name": "E01_005__ev00_f1750-2224_50s",
+      "video_path": "data/clips/E01_005/ev00_f1750-2224_50s.mp4",
+      "roi_json": "configs/rois/E01_005/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_006",
+      "artifact_name": "E01_006__ev00_f1978-2157_50s",
+      "video_path": "data/clips/E01_006/ev00_f1978-2157_50s.mp4",
+      "roi_json": "configs/rois/E01_006/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_007",
+      "artifact_name": "E01_007__ev00_f1893-2212_50s",
+      "video_path": "data/clips/E01_007/ev00_f1893-2212_50s.mp4",
+      "roi_json": "configs/rois/E01_007/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_009",
+      "artifact_name": "E01_009__ev00_f1992-2335_50s",
+      "video_path": "data/clips/E01_009/ev00_f1992-2335_50s.mp4",
+      "roi_json": "configs/rois/E01_009/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_010",
+      "artifact_name": "E01_010__ev00_f1862-1981_50s",
+      "video_path": "data/clips/E01_010/ev00_f1862-1981_50s.mp4",
+      "roi_json": "configs/rois/E01_010/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_012",
+      "artifact_name": "E01_012__ev00_f1603-2284_50s",
+      "video_path": "data/clips/E01_012/ev00_f1603-2284_50s.mp4",
+      "roi_json": "configs/rois/E01_012/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_013",
+      "artifact_name": "E01_013__ev00_f1818-1982_50s",
+      "video_path": "data/clips/E01_013/ev00_f1818-1982_50s.mp4",
+      "roi_json": "configs/rois/E01_013/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_014",
+      "artifact_name": "E01_014__ev00_f2015-2315_50s",
+      "video_path": "data/clips/E01_014/ev00_f2015-2315_50s.mp4",
+      "roi_json": "configs/rois/E01_014/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_015",
+      "artifact_name": "E01_015__ev00_f1496-2089_50s",
+      "video_path": "data/clips/E01_015/ev00_f1496-2089_50s.mp4",
+      "roi_json": "configs/rois/E01_015/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    },
+    {
+      "source_id": "E01_016",
+      "artifact_name": "E01_016__ev00_f2077-2309_50s",
+      "video_path": "data/clips/E01_016/ev00_f2077-2309_50s.mp4",
+      "roi_json": "configs/rois/E01_016/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["clean_success", "demo_priority"],
+      "notes": "Phase 1 demo candidate from the baseline event set."
+    }
+  ]
+}

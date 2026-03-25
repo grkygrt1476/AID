@@ -1,268 +1,191 @@
-# AID
+# AID -- Area Intrusion Detection for CCTV with Boundary-Aware Continuity
 
-This repository contains an intrusion-detection proof-of-concept pipeline with multiple iterations, archived experiments, and a DeepStream-based Stage 04 stack for hard boundary / occlusion cases.
+A service-oriented proof of concept for event-level CCTV area intrusion detection.  
+The system determines whether a person has entered a defined ROI (for example, a fenced perimeter) and is designed to produce stable, confirmed intrusion events rather than per-frame bounding-box alerts.
 
-The current working focus is `scripts/04_deepstream/`, especially the Stage 04 hard-case pipeline:
+The main challenge is not person detection by itself, but maintaining reliable intrusion judgment when a person is only partially visible or temporarily lost near the ROI boundary.
 
-- detector + tracker baseline
-- monitoring / operator OSD
-- intrusion FSM
-- continuity assist
-- ROI crop preparation
-- boundary reacquire with KLT-backed continuity
+## Why this is difficult
 
-## Project Overview
+A naive intrusion rule asks only whether a detected person box overlaps the ROI.
+That is easy to implement, but it produces many false positives near boundaries.
 
-Stage 04 is the DeepStream pipeline that handles difficult intrusion cases near ROI boundaries, partial occlusion, detector dropout, and short-lived reacquisition noise.
+A stricter rule based on ankle or lower-body evidence is more meaningful for real entry, but it becomes harder to apply during boundary crossing.
+When a person climbs over a wall or fence, the most reliable confirmation cue can temporarily disappear because of occlusion, pose change, or short detector dropout.
 
-The intended confirmed-intrusion semantics are deliberately narrow:
+The challenge, then, is not just detecting a person. It is preserving a precise intrusion definition while handling the short ambiguous interval where ankle evidence is temporarily unavailable.
 
-- confirmed intrusion = `ankle_in_roi` OR `lower_body_overlap_confirm`
-- upper/head KLT is continuity and geometry carry-over only
-- head-only confirmation is intentionally disabled
-- KLT-backed rows are allowed only to preserve or recover lower-body semantics, not to create new head semantics
+- **False positives from naive ROI overlap**: simple bbox overlap near the boundary can trigger intrusion even when actual entry is not yet clear.
+- **Boundary crossing with missing ankle evidence**: during wall- or fence-crossing, the lower body may be partially hidden, ankle evidence can disappear, and the detector may briefly lose the actor exactly when confirmation is most needed.
+- **Cost of always-on fine-grained confirmation**: one way to recover missing ankle evidence is to run heavier pose or part-level models continuously, but that is expensive for multi-stream CCTV monitoring and hard to justify as the default path for every frame.
 
-In practice, the hard problem in this repo is not basic ROI scoring. It is maintaining enough continuity through dropouts and reacquires so that existing ankle / lower-body semantics still have stable geometry to operate on.
+So the design goal was to preserve an ankle-centered intrusion definition without paying the cost of always-on heavy recovery models.
 
-## Stage 04 Breakdown
+## What I built
 
-| Stage | Role | Key files | Handoff |
-| --- | --- | --- | --- |
-| `04_01` baseline | Runs the raw DeepStream detector + tracker multistream baseline and exports the initial tracking artifacts. | `scripts/04_deepstream/04_01_ds_multistream_baseline.py`, `configs/deepstream/04_ds_yolo11_tracker_nvdcf_multistream4.txt`, `configs/deepstream/config_infer_primary_yolo11_clean.txt` | Produces the baseline multistream run used as the reference tracking/export pass. |
-| `04_02` monitoring OSD | Adds monitoring overlays with the `gst-dsmonitorosd` plugin for operator-facing inspection. | `scripts/04_deepstream/04_02_ds_multistream_osd.py`, `scripts/04_deepstream/gst-dsmonitorosd/` | Keeps the same source layout and makes tracking / ROI state easier to inspect visually. |
-| `04_03` intrusion | Runs the main intrusion decision pass and render helper using the shared FSM. | `scripts/04_deepstream/04_03_ds_multistream_intrusion.py`, `aidlib/intrusion/decision_fsm.py`, `configs/intrusion/mvp_v1.yaml` | Converts tracking sidecar rows into `OUT` / `CANDIDATE` / `IN_CONFIRMED` events plus summaries and overlays. |
-| `04_04` continuity assist | Extends Stage 04.03 with upper-anchor continuity support to survive short tracking losses. | `scripts/04_deepstream/04_04_ds_multistream_continuity_assist.py`, `aidlib/intrusion/decision_fsm.py` | Keeps candidate / confirm context alive long enough for hard boundary cases to recover. |
-| `04_05a` ROI crop clips | Generates per-source ROI crop videos and metadata with frame-index lockstep. | `scripts/04_deepstream/04_05a_make_roi_crop_clips.py` | Writes `crop_assets_manifest.json` consumed by `04_05`. |
-| `04_05` boundary reacquire | Final hard-case stage. Augments sidecar rows with KLT-backed proxy / hold rows, gates weak real reacquires, then reruns the same intrusion FSM semantics. | `scripts/04_deepstream/04_05_ds_multistream_boundary_reacquire.py`, `aidlib/intrusion/decision_fsm.py`, `scripts/04_deepstream/04_03_ds_multistream_intrusion.py` | Produces the final Stage 04 intrusion events, summaries, sidecars, and tiled videos. |
+### Architecture
 
-## Current Intrusion Logic
+The pipeline runs on NVIDIA DeepStream (GStreamer-based, GPU-accelerated) and processes four camera streams simultaneously:
 
-### Confirm semantics
-
-- `ankle_in_roi` remains the direct pose-confirm path.
-- `lower_body_overlap_confirm` remains the lower-body confirm path.
-- Stage 04 operator-facing basis stays `ankle` or `lower-body`.
-- Head-only confirm paths remain disabled in the FSM and in the render/display mapping.
-
-`scripts/04_deepstream/04_03_ds_multistream_intrusion.py` still maps:
-
-- `ankle_in_roi` -> `ankle`
-- `lower_body_overlap_confirm`
-- `klt_ankle_proxy_confirm`
-- `klt_bottom_center_proxy_confirm`
-- `klt_current_lowerband_confirm`
-- `klt_projected_bottom_center_confirm`
-
-to the same operator-facing `lower-body` basis.
-
-### What row types exist downstream from `04_05`
-
-There are two different concepts and they should not be confused:
-
-- `mode` is what the downstream FSM actually consumes.
-- `row_source` is a Stage 04.05 debug / ownership field.
-
-Downstream `mode` values currently loaded by `SidecarRow` are:
-
-- `real`
-- `proxy`
-- `frozen_hold`
-
-Stage 04.05 also writes `row_source` debug values such as:
-
-- `real`
-- `proxy`
-- `frozen_hold`
-- `real_support_only`
-
-Important: `real_support_only` is not a new downstream FSM mode. It is a debug owner/status marker written by `04_05` while the actual row handed to the FSM remains a preserved KLT-backed row such as `frozen_hold`.
-
-### What KLT / proxy / hold labels mean
-
-- `real`: a detector-produced row currently owning geometry.
-- `proxy`: a KLT-backed extrapolated row carrying geometry through missing detections.
-- `frozen_hold`: a preserved KLT/hold row used when continuity is still trusted but geometry should not advance aggressively.
-- `real_support_only`: a Stage 04.05 debug label meaning a real reacquire was observed, but it was intentionally treated as provisional support instead of immediate geometry ownership.
-
-### Candidate and confirm behavior
-
-Stage 04 currently does the following:
-
-- candidate entry can come from real rows, proxy/frozen rows, or KLT continuity support
-- lower-band overlap is computed from the current bbox for any valid row geometry
-- ankle-proxy / bottom-center proxy / projected-bottom-center evidence can be computed on KLT-backed continuity rows
-- confirm basis remains ankle or lower-body only
-
-The practical hard-case bottlenecks are:
-
-- weak one-frame real reacquires can still corrupt continuity if adoption is too aggressive
-- KLT continuity quality is sensitive to reliable upper-anchor carry-over
-- source numbering in outputs is 0-based (`source0`..`source3`), not human ordinal numbering
-- `row_source` debug values can suggest a special row class, but the downstream FSM still keys primarily on `mode`
-
-## Audit Summary
-
-The current audit of Stage 04 found:
-
-- KLT-backed rows do participate in candidate logic.
-- Lower-body overlap is computed for KLT-backed rows.
-- Ankle-proxy and other ankle-like lower-body proxy evidence is computed for KLT-backed rows.
-- KLT-backed rows can already confirm through existing lower-body semantics.
-- There was one real mismatch in the active lower-band confirm path: candidate support accepted broader upper-anchor continuity, but `klt_current_lowerband_confirm` still required a head-like anchor.
-
-That mismatch has now been narrowed so the active current-lower-band confirm path uses the same upper-anchor continuity gate already used by candidate support and projected-bottom confirm. This preserves semantics because the confirm reason is still `lower_body_overlap_confirm`; it does not reintroduce any head-only confirm path.
-
-## Inputs And Outputs
-
-### Expected inputs
-
-- 4 source clips, typically under `data/clips/<EVENT>/...`
-- matching ROI JSON files under `data/videos/rois/...`
-- DeepStream primary detector config under `configs/deepstream/`
-- intrusion thresholds from `configs/intrusion/mvp_v1.yaml`
-- for `04_05`, a crop manifest from `04_05a`
-
-### Crop manifest usage
-
-`04_05a` writes a manifest at:
-
-- `outputs/04_deepstream/<RUN_TS>/multistream4_boundary_reacquire/crop_assets/crop_assets_manifest.json`
-
-The manifest records:
-
-- `source_id`
-- `clip_label`
-- `source_clip_path`
-- `crop_clip_path`
-- `crop_metadata_path`
-- frame-index synchronization guarantees
-
-The current manifest format explicitly states:
-
-- `crop_frame_index == source_frame_index`
-- FPS preserved
-- frame count preserved
-- no dropped frames
-
-### Per-run output structure
-
-Representative Stage 04.05 output tree:
-
-```text
-outputs/04_deepstream/<RUN_TS>/multistream4_boundary_reacquire/
-├── boundary_reacquire_run_summary.json
-├── ds_app_runtime.txt
-├── multistream4_boundary_reacquire_tiled_boundary_reacquire.mp4
-├── multistream4_boundary_reacquire_tiled_tracking_export.mp4
-├── run_meta.json
-├── tracking_sidecar_combined.csv
-└── per_source/
-    ├── source0_E01_001/
-    ├── source1_E01_004/
-    ├── source2_E01_008/
-    └── source3_E01_011/
+```
+4 RTSP/file sources
+  --> person detection and tracking
+  --> boundary-aware occlusion handling
+  --> event-level intrusion decision
+  --> output artifacts (events, summaries, overlay video)
 ```
 
-Each per-source directory typically contains:
+### Key design decisions
 
-- `tracking_sidecar.csv`
-- `intrusion_events.jsonl`
-- `intrusion_summary.json`
+**Intrusion as a state machine, not a threshold.**
+Each tracked person runs through a three-state FSM: `OUT` -> `CANDIDATE` -> `IN_CONFIRMED`. Transitions require sustained evidence over multiple frames, with separate entry and exit counters and a grace period. This reduces single-frame false positives.
 
-### Key output files
+**Confirmation is anchored in lower-body evidence.**
+The system is designed to rely primarily on lower-body evidence when confirming intrusion, with ankle position treated as the strongest cue for actual entry into the ROI. Upper-body-only evidence may still be useful during ambiguous boundary intervals, but it is not the preferred basis for final confirmation.
 
-- `tracking_sidecar.csv`: tracking/export rows after Stage 04.05 sidecar augmentation. This is where `mode`, `proxy_age`, `row_source`, `real_reacquire_class`, KLT flow fields, and geometry ownership transitions are visible.
-- `intrusion_events.jsonl`: one record per emitted decision/event frame. This contains `candidate_metrics`, `confirm`, `reasons`, and counters, and is the best file for auditing why a track entered candidate or confirmed intrusion.
-- `intrusion_summary.json`: per-source run summary with sidecar stats, decision params, confirmed event count, row modes present, and high-level run metadata.
-- `boundary_reacquire_run_summary.json`: top-level Stage 04.05 summary including tiled outputs, per-source split sidecar paths, crop clip paths, and KLT augmentation stats.
-- `logs`: `outputs/logs/04_deepstream/*.log` captures the full DeepStream run, sidecar split summary, KLT augmentation counts, and final render completion.
-- tiled videos: `*_tiled_tracking_export.mp4` and `*_tiled_boundary_reacquire.mp4` are useful for frame-by-frame operator review.
-- crop assets: `04_05a` writes `crop_assets_manifest.json`, per-source `roi_crop.mp4`, and `crop_metadata.json` for the ROI-crop lockstep pass.
+**KLT continuity is used as a bridge across short boundary gaps.**
+When the detector loses a person near the ROI boundary, KLT optical flow helps carry forward approximate geometry through the short ambiguous interval. This continuity layer is intended to preserve event context and support later recovery, rather than replace the main lower-body-based confirmation logic.
 
-## Useful Debugging Fields
+## Pipeline stages
 
-High-value fields currently present in Stage 04.05 outputs include:
+| Stage | Purpose | Key output |
+|-------|---------|------------|
+| 00 | Data prep: clip extraction, ROI labeling | ROI polygon JSONs |
+| 01 | Baseline YOLO + ByteTrack tracking | Single-clip tracked video |
+| 02 | KLT and pose-patch continuity experiments | Continuity-augmented sidecars |
+| 03 | DeepStream single-stream proving stage | Single-stream intrusion events |
+| **04** | **Multistream DeepStream pipeline (final)** | **4-source intrusion events + tiled video** |
 
-- `mode`: the row type actually consumed by the downstream FSM (`real`, `proxy`, `frozen_hold`)
-- `row_source`: Stage 04.05 geometry-ownership/debug label; can be `real_support_only` while `mode` remains `frozen_hold`
-- `stop_reason`: why a row stopped, froze, or stayed provisional; useful values include `real_first_frame_provisional`, `real_temporal_consistency_insufficient`, and `real_geometry_reject`
-- `handoff_reason`: compact ownership transition reason such as `real_support_only` or rejection-preserve cases
-- `real_reacquire_class`: `REAL_ADOPT`, `REAL_SUPPORT_ONLY`, or `REAL_REJECT`
-- `predicted_anchor_x`, `predicted_anchor_y`: conservative KLT-predicted anchor used to score a returning real row
-- `real_anchor_innovation_px`: distance between predicted anchor and observed returning-real anchor
-- `real_height_ratio`: returning real bbox height relative to the recent valid geometry
-- `real_aspect_ratio_ratio`: returning real aspect ratio relative to the recent valid geometry
-- `recent_real_adoptable_count`: short-window count of recent returning-real observations that looked adoptable
-- `klt_reliable_chain_length`: how long the current reliable KLT continuity chain has been alive
-- `klt_candidate_support_count`: how many recent frames satisfied the active KLT candidate-support rule
-- `klt_current_lowerband_confirm`: whether the active current lower-band confirm branch fired on this frame
-- `klt_ankle_proxy_confirm`: whether projected ankle proxy evidence confirmed lower-body intrusion
-- `klt_projected_bottom_center_confirm`: whether projected bottom-center lower-body evidence confirmed intrusion
-- `klt_current_reliable_continuity`: compact indicator of whether the current row is considered reliable KLT continuity
+Stage 03 is the preserved single-stream proving stage. It was also the main DeepStream integration stage for custom GStreamer plugins used to test continuity-related behaviors and event-level intrusion logic in a controlled single-stream setting.
 
-Practical debugging note:
+Stage 04 is the main multistream deliverable. It carries the pipeline through to the final four-camera intrusion flow, including boundary-aware occlusion handling and event-level decision outputs.
 
-- If `row_source=real_support_only` but `mode=frozen_hold`, the FSM is intentionally preserving the KLT/hold geometry owner while recording that a weak real reacquire was seen.
+### Stage 04 substages
 
-## Commands
+| Step | What it does |
+|------|-------------|
+| 04.01 | Runs the DeepStream detector + NvDCF tracker on 4 streams, exports tracking sidecars |
+| 04.02 | Adds operator-facing monitoring OSD via custom GStreamer plugin |
+| 04.03 | Runs the intrusion FSM decision pass, produces events and tiled overlay video |
+| 04.04 | Extends 04.03 with upper-anchor continuity support for short tracking gaps |
+| 04.05a | Generates per-source ROI crop clips with frame-index lockstep |
+| 04.05 | Final stage: KLT-backed proxy rows, gated reacquisition, frozen-hold geometry, then FSM rerun |
 
-Host syntax checks:
 
-```bash
-cd /home/kihun/AID
-python3 -m py_compile scripts/04_deepstream/04_05_ds_multistream_boundary_reacquire.py
-python3 -m py_compile aidlib/intrusion/decision_fsm.py
-python3 -m py_compile scripts/04_deepstream/04_03_ds_multistream_intrusion.py
+### Gated reacquisition
+
+When a person is detected again after a short gap, the system does not immediately assume that the new box belongs to the same actor. Instead, it checks whether the new detection is consistent with the recent continuity estimate, and only then decides whether to adopt it, treat it as weak support, or reject it. This helps prevent a noisy one-frame detection from jumping a confirmed intrusion state to a nearby bystander.
+
+## Repository structure
+
+```
+aidlib/                     Core library
+  intrusion/                  Intrusion detection modules
+    decision_fsm.py             Event-level FSM + sidecar processing
+    features.py                 Bbox-to-ROI factor computation
+    roi.py                      ROI polygon geometry and caching
+    score.py                    Weighted scoring
+  run_utils.py                Runtime path management and logging
+
+scripts/
+  00_prep/                  Data preparation and ROI labeling tools
+  01_tracking/              Baseline YOLO + ByteTrack
+  02_tracking_assist/       KLT and pose-patch experiments
+  03_ds_single_stream/      Single-stream DeepStream + plugins
+  04_ds_multi_stream/       Multistream pipeline (main)
+    04_01_* to 04_05_*        Stage 04 Python entrypoints
+    gst-dsintrusionmeta/      Custom GStreamer plugin (C++)
+    gst-dsmonitorosd/         Custom GStreamer plugin (C++)
+
+configs/
+  deepstream/               DeepStream pipeline and detector configs
+  trackers/                 Tracker parameter configs
+  intrusion/                FSM thresholds and scoring weights
+  rois/                     Per-camera ROI polygon definitions (cleaned subset; some Stage 04 paths still use legacy ROI locations)
+  cameras/                  Per-camera stabilization parameters
+
+data/
+  videos/rois/            Legacy ROI location still referenced by some Stage 04 paths
+
+archive/                    Superseded experiments (kept for reference)
 ```
 
-Container syntax checks:
+Note: the source directories were renamed to 03_ds_single_stream and 04_ds_multi_stream for clarity. Existing historical outputs and logs may still remain under outputs/03_deepstream and outputs/04_deepstream for backward compatibility.
 
-```bash
-docker exec ds8 bash -lc 'python3 -m py_compile /workspace/AID/scripts/04_deepstream/04_05_ds_multistream_boundary_reacquire.py'
-docker exec ds8 bash -lc 'python3 -m py_compile /workspace/AID/aidlib/intrusion/decision_fsm.py'
-docker exec ds8 bash -lc 'python3 -m py_compile /workspace/AID/scripts/04_deepstream/04_03_ds_multistream_intrusion.py'
-```
+## Evidence
 
-Representative full Stage 04.05 run with crop manifest:
+Representative Stage 04 runs produce the following artifacts:
 
-```bash
-docker exec ds8 bash -lc 'set -e; cd /workspace/AID; /usr/bin/python3 scripts/04_deepstream/04_05_ds_multistream_boundary_reacquire.py --run_ts 20260319_140500 --crop_manifest /workspace/AID/outputs/04_deepstream/20260318_183500/multistream4_boundary_reacquire/crop_assets/crop_assets_manifest.json'
-```
+- `tracking_sidecar.csv` -- per-frame, per-track rows with bbox data, continuity-related mode metadata, and other tracking/debug fields
+- `intrusion_events.jsonl` -- one record per state transition with candidate metrics, confirm reason, and counters
+- `intrusion_summary.json` -- per-source summary including confirmed event count, decision parameters, and sidecar statistics
+- `*_tiled_boundary_reacquire.mp4` -- 2x2 tiled visualization across all 4 sources
 
-Representative crop-asset preparation flow:
+A useful evaluation slice for this repository is a Stage 03 vs Stage 04 comparison on the same clip, together with per-clip ground-truth intrusion counts versus confirmed event counts.
 
-```bash
-python3 scripts/04_deepstream/04_05a_make_roi_crop_clips.py --run_ts <RUN_TS>
-python3 scripts/04_deepstream/04_05_ds_multistream_boundary_reacquire.py --run_ts <RUN_TS> --crop_manifest outputs/04_deepstream/<PREP_TS>/multistream4_boundary_reacquire/crop_assets/crop_assets_manifest.json
-```
+Further technical details on output fields, row semantics, and debugging can be documented in `docs/STAGE04_INTERNALS.md`.
 
-## Known Issues And Current Status
+## Tech stack
 
-- Weak real reacquire is still the main Stage 04.05 failure mode. The current mitigation is to classify returning real rows as `REAL_ADOPT`, `REAL_SUPPORT_ONLY`, or `REAL_REJECT` and preserve KLT-backed geometry when the first real row is too weak.
-- KLT-backed confirm eligibility now stays within existing semantics: ankle proxy and lower-body overlap can confirm, but head-only confirmation remains disabled.
-- The active lower-band KLT confirm path now accepts broader upper-anchor continuity, not just head-like anchors, which aligns it with candidate support and projected-bottom confirm behavior.
-- `row_source` and `mode` are intentionally not the same thing. Most downstream logic reads `mode`, so debugging should always inspect both fields together.
-- Output source folders are 0-based. `source3_E01_011` is the fourth stream.
-- The ROI crop assets used by `04_05` may live under an earlier prep run timestamp rather than inside the final `04_05` output tree.
-- This repo contains older archived experiments and vendor snapshots alongside the active Stage 04 path. Their presence is intentional for reference, not an indicator that the runtime uses all of them.
+- **Detection**: YOLO11s (Ultralytics), exported to ONNX/TensorRT
+- **Tracking**: NvDCF (DeepStream), ByteTrack (Ultralytics, for baseline comparison)
+- **Pipeline**: NVIDIA DeepStream 7.1, GStreamer
+- **Continuity**: KLT optical flow (OpenCV), YOLO11s-pose for ankle keypoints
+- **Plugins**: custom GStreamer elements written in C++ across the DeepStream stages
+- **Decision logic**: Python FSM and scoring modules for event-level intrusion judgment
+- **Infrastructure**: Docker (DeepStream NGC container), CUDA 12.8, TensorRT
 
-## Folder Usage Notes
+## Setup
 
-These are inspection findings only. No cleanup or reorganization has been done.
+Setup details, weight provisioning, and run instructions should be documented in docs/SETUP.md.
 
-- `deepstream_tao_apps`: actively used for the BodyPose3D secondary infer path. Current repo references point to `configs/deepstream/config_infer_secondary_bodypose3d_poseanchor.txt` and `scripts/03_deepstream/gst-dsposeanchorassist/README.md`.
-- `DeepStream-Yolo-clean`: actively used by current DeepStream primary infer configs. `configs/deepstream/config_infer_primary_yolo11_clean.txt` and `configs/deepstream/04_config_infer_primary_yolo11_clean_b4.txt` both point to the compiled custom parser library under this folder.
-- `DeepStream-Yolo`: appears to be a vendor/reference snapshot rather than an active Stage 04 runtime dependency. The current repo-level configs point at `DeepStream-Yolo-clean`, not this folder.
-- `analysis`: appears to be passive analysis material only. The top level currently contains `analysis/eda_state_factors.ipynb`, and no active repo-level script/config references were found.
-- `archive`: legacy reference material. The top level currently contains archived scripts and `archive/scripts/README.md`, but no active Stage 04 script/config references were found outside the archive itself.
-- `runs`: apparently unused at the top level right now. The folder exists but no files were found under it during this audit and no active repo-level references were found.
-- `weights`: actively used and not suspicious. DeepStream infer configs and older tracking scripts still reference model assets under `weights/`.
+## 16-channel burst benchmark
 
-## Fast Navigation
+After the core Stage 04 multistream pipeline was working end-to-end on four sources, the system was stress-tested with a 16-channel synchronized intrusion burst benchmark.
 
-- Stage 04 baseline: `scripts/04_deepstream/04_01_ds_multistream_baseline.py`
-- Stage 04 intrusion render/helper: `scripts/04_deepstream/04_03_ds_multistream_intrusion.py`
-- Shared intrusion FSM: `aidlib/intrusion/decision_fsm.py`
-- Continuity assist: `scripts/04_deepstream/04_04_ds_multistream_continuity_assist.py`
-- ROI crop prep: `scripts/04_deepstream/04_05a_make_roi_crop_clips.py`
-- Final hard-case boundary reacquire: `scripts/04_deepstream/04_05_ds_multistream_boundary_reacquire.py`
+This was not the primary project deliverable. It was a validation and scalability extension designed to answer a practical question: how does the full boundary-aware pipeline behave when every source is simultaneously running through the expensive confirmation path?
+
+The benchmark used 16 synchronized 50-second clips, each containing at least one intrusion event near the ROI boundary. All sources were read at `input_read_fps=10`. Because every clip contains active boundary crossing, this forces the pipeline into its heaviest operating mode on all channels simultaneously -- the decision FSM, KLT continuity, gated reacquisition, and render-side keypoint recovery are all active on most frames across most sources.
+
+### What the benchmark measured
+
+The pipeline processes each run through sequential phases: DeepStream GPU inference and tracking export, KLT-based continuity augmentation, the intrusion decision pass (FSM state transitions with ankle-level pose probes), and a boundary-aware render pass with gated reacquisition. Each phase is individually timed.
+
+Under the 16-channel burst workload, the dominant costs were:
+
+- **Decision pass** (~33s): per-track pose probing to determine ankle position relative to the ROI boundary. This runs a YOLO pose model on every candidate track that reaches the `rich_pose` classification tier.
+- **Render with boundary reacquire** (~32s): keypoint refresh and missing-track recovery using gated model calls, plus source video I/O and overlay composition.
+- **KLT continuity augmentation** (~21s): optical flow bridging across short detector gaps, gated by a per-frame boundary-relevance predicate.
+
+The benchmark also tracked per-frame tail latency, model invocation counts, and guardrail counters for each optimization variant.
+
+### Benchmark results
+
+The baseline configuration (with render-side cadence optimizations enabled, all decision-side experimental flags off) processed 16 channels at approximately **4.9 fps per stream** with 17 confirmed intrusion events.
+
+With a decision-pass lazy decode optimization enabled (skipping full frame decode on frames where no track requires a pose probe), throughput increased to approximately **5.4 fps per stream** while producing the same 17 confirmed events, with zero guardrail warnings and zero lazy-decode misses across 6,644 skipped frames.
+
+A render-side model budget cap was also tested. While it achieved similar throughput and reduced tail latency, it was excluded from the headline result because the budget was set too aggressively and starved confirmed-state tracks of keypoint refresh -- a guardrail violation that, while not affecting event counts in this run, would not be acceptable in production.
+
+Full experiment data is available in `outputs/04_deepstream/` under the `20260324_baseline_232545`, `20260324_b1_232744`, `20260324_b2_232932`, and `20260324_b3_light_233300` run directories. A compact comparison is in `outputs/analysis/exp_compare_latest.md`.
+
+## Further technical details
+
+- `docs/stage03/README.md` -- Stage 03 single-stream semantics: the continuity-vs-truth problem, why event-level intrusion is harder than per-frame detection, and how the FSM confirmation logic was developed in a controlled single-stream setting before being carried to multistream.
+- `docs/stage04/README.md` -- Stage 04 multistream architecture and the 16-channel benchmark: pipeline structure, runner/core separation, bottleneck interpretation, and how to read the benchmark results.
+- `outputs/analysis/exp_compare_latest.md` -- compact experiment comparison table across the benchmark variants.
+
+Further internal notes on decision FSM fields, sidecar row semantics, and render-side recovery logic may be documented in `docs/STAGE04_INTERNALS.md` in the future.
+
+## Data source and attribution
+
+- Some demo visuals in this portfolio were generated from AI-Hub data.
+- Dataset: "지능형 관제 서비스 CCTV 영상 데이터" (AI-Hub)
+- Source: https://www.aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&dataSetSn=71850
+- Used for non-commercial research/development and portfolio demonstration.
+- Third-party datasets remain under their respective terms.
+
+## License
+
+This repository is shared as a personal portfolio project. All rights reserved.
+

@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 
-DEFAULT_OUT_ROOT = Path("/home/serdic/project/AID/outputs")
-DEFAULT_LOG_ROOT = Path("/home/serdic/project/AID/outputs/logs")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_OUT_ROOT = _PROJECT_ROOT / "outputs"
+DEFAULT_LOG_ROOT = _PROJECT_ROOT / "outputs" / "logs"
 
 
 @dataclass

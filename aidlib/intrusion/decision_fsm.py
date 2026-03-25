@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -139,6 +141,19 @@ def bbox_roi_min_distance_px(
     if min_signed <= 0.0:
         return 0.0
     return float(min_signed)
+
+
+def lookup_signed_distance_at_point(point_xy: tuple[float, float], roi_signed_dist: np.ndarray) -> float:
+    _require_decision_deps()
+    h, w = roi_signed_dist.shape[:2]
+    x = int(round(_clamp(float(point_xy[0]), 0.0, float(w - 1))))
+    y = int(round(_clamp(float(point_xy[1]), 0.0, float(h - 1))))
+    return float(roi_signed_dist[y, x])
+
+
+def bbox_bottom_center_xyxy(bbox_xyxy: list[float] | tuple[float, float, float, float]) -> tuple[float, float]:
+    x1, _y1, x2, y2 = map(float, bbox_xyxy)
+    return (0.5 * (x1 + x2), float(y2))
 
 
 def nearest_point_on_segment(
@@ -339,6 +354,18 @@ class DecisionParams:
     klt_candidate_accum_min_motion_toward_score: float = 0.60
     klt_candidate_accum_max_roi_distance_px: float = 4.0
     klt_candidate_accum_ready_hold_frames: int = 4
+    fast_reject_margin_add_px: float = 0.0
+    enable_pose_probe_reuse: bool = False
+    pose_probe_reuse_ttl_frames: int = 1
+    pose_probe_reuse_max_center_shift_px: float = 8.0
+    pose_probe_reuse_max_center_shift_ratio: float = 0.08
+    pose_probe_reuse_area_ratio_min: float = 0.92
+    pose_probe_reuse_area_ratio_max: float = 1.08
+    pose_probe_reuse_aspect_ratio_min: float = 0.92
+    pose_probe_reuse_aspect_ratio_max: float = 1.08
+    enable_decision_lazy_decode: bool = False
+    enable_klt_boundary_band_tightening: bool = False
+    klt_boundary_band_scale_mult: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -838,6 +865,22 @@ def confirm_path_to_basis(confirm_path: str) -> str:
 def bbox_has_area_xyxy(bbox_xyxy: list[float] | tuple[float, float, float, float]) -> bool:
     x1, y1, x2, y2 = map(float, bbox_xyxy)
     return (x2 - x1) > 1.0 and (y2 - y1) > 1.0
+
+
+def bbox_area_xyxy(bbox_xyxy: list[float] | tuple[float, float, float, float] | None) -> float:
+    if bbox_xyxy is None or not bbox_has_area_xyxy(bbox_xyxy):
+        return 0.0
+    x1, y1, x2, y2 = map(float, bbox_xyxy)
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def bbox_aspect_ratio_xyxy(bbox_xyxy: list[float] | tuple[float, float, float, float] | None) -> float:
+    if bbox_xyxy is None or not bbox_has_area_xyxy(bbox_xyxy):
+        return 0.0
+    x1, y1, x2, y2 = map(float, bbox_xyxy)
+    width = max(1.0, x2 - x1)
+    height = max(1.0, y2 - y1)
+    return float(width / height)
 
 
 def project_point_between_bboxes(
@@ -1945,6 +1988,9 @@ class TrackDecisionState:
     active_confirm_basis: str = "none"
     event_index: int = 0
     active_event_id: str = ""
+    last_pose_probe_frame: Optional[int] = None
+    last_pose_probe_bbox_xyxy: list[float] | None = None
+    last_pose_probe_result: PoseProbeResult | None = None
 
     def _begin_new_event(self, frame_num: int) -> None:
         self.event_index += 1
@@ -1970,6 +2016,114 @@ class TrackDecisionState:
         self.active_confirm_path = "none"
         self.active_confirm_basis = "none"
         self.active_event_id = ""
+        self.last_pose_probe_frame = None
+        self.last_pose_probe_bbox_xyxy = None
+        self.last_pose_probe_result = None
+
+    def _build_light_out_record(
+        self,
+        *,
+        frame_num: int,
+        ts_sec: float,
+        row: SidecarRow | None,
+        roi_id: str,
+        continuity_id: str,
+        decision_row_path: str,
+    ) -> dict[str, Any]:
+        bbox_xyxy = list(self.last_bbox_xyxy or (row.bbox_xyxy if row is not None and row.has_valid_bbox else []))
+        return {
+            "frame_num": int(frame_num),
+            "ts_sec": round(float(ts_sec), 4),
+            "source_id": int(self.source_id),
+            "track_id": int(self.track_id),
+            "continuity_id": continuity_id,
+            "state": self.state,
+            "state_prev": STATE_OUT,
+            "event_type": "out_keep",
+            "transition": "",
+            "roi_id": roi_id,
+            "mode": row.mode if row is not None else "none",
+            "proxy_age": int(row.proxy_age) if row is not None else None,
+            "tracking_event": row.event if row is not None else "",
+            "tracking_stop_reason": row.stop_reason if row is not None else "",
+            "tracking_handoff_reason": row.handoff_reason if row is not None else "",
+            "bbox": [round(float(v), 2) for v in bbox_xyxy] if bbox_xyxy else [],
+            "evidence": {
+                "real_track_candidate": False,
+                "proxy_candidate": False,
+                "proxy_start_allowed": False,
+                "klt_candidate_signal": False,
+                "klt_continuity_sustain": False,
+                "ankle_confirm": False,
+                "klt_boundary_confirm": False,
+            },
+            "candidate_metrics": {
+                "bbox_overlap": 0.0,
+                "lower_band_overlap": 0.0,
+                "bottom_center": [],
+                "bottom_center_in_roi": False,
+                "signed_distance_px": 0.0,
+                "roi_min_distance_px": 0.0,
+                "motion_toward_score": 0.0,
+                "motion_speed_px": 0.0,
+                "early_candidate_pretrigger": False,
+                "klt_candidate_signal": False,
+                "klt_candidate_open": False,
+                "klt_candidate_sustain": False,
+                "klt_candidate_reason": "",
+                "klt_candidate_anchor_source": "",
+                "klt_candidate_anchor_kind": "",
+                "klt_candidate_anchor_inside_roi": False,
+                "klt_candidate_boundary_near_or_inside": False,
+                "klt_candidate_anchor_xy": [],
+                "klt_candidate_seed_frame_num": None,
+                "klt_candidate_frames_since_seed": None,
+                "klt_candidate_recent_real_seed": False,
+                "klt_candidate_recent_candidate_context": False,
+                "klt_candidate_inward_progression_ok": False,
+                "klt_candidate_continuity_seeded": False,
+                "klt_candidate_reliability_ok": False,
+                "klt_candidate_sparse_gap_now": False,
+                "klt_candidate_tracked_points": 0,
+                "klt_candidate_flow_mag": 0.0,
+                "klt_candidate_proxy_mode": "",
+                "klt_candidate_proxy_age": 0,
+                "klt_candidate_patch_roi_min_distance_px": 0.0,
+                "klt_candidate_motion_toward_score": 0.0,
+                "klt_candidate_motion_speed_px": 0.0,
+                "score": 0.0,
+            },
+            "confirm": {
+                "required_ankle": False,
+                "ankle_confirm_enabled": True,
+                "klt_confirm_enabled": True,
+                "confirm_path": "none",
+                "confirm_basis": "none",
+                "active_confirm_path": "none",
+                "active_confirm_basis": "none",
+                "status": "pose_not_needed_light_out",
+                "attempted": False,
+                "ankle_visible_now": False,
+                "ankles": [],
+                "klt_boundary_confirm": False,
+                "klt_reason": "",
+                "klt_variant_reason": "",
+                "klt_pattern": "",
+                "klt_anchor_source": "",
+                "klt_anchor_kind": "",
+                "klt_anchor_inside_roi": False,
+                "klt_boundary_near_or_inside": False,
+                "klt_anchor_xy": [],
+            },
+            "reasons": [],
+            "counters": {
+                "candidate_streak": int(self.candidate_streak),
+                "confirm_streak": int(self.confirm_streak),
+                "exit_streak": int(self.exit_streak),
+                "grace_left": int(self.grace_left),
+            },
+            "decision_row_path": decision_row_path,
+        }
 
     def update(
         self,
@@ -1982,6 +2136,7 @@ class TrackDecisionState:
         params: DecisionParams,
         roi_id: str,
         roi_cache: RoiCache,
+        decision_row_path: str = "rich_pose",
     ) -> dict[str, Any]:
         if row is not None:
             self.source_id = row.source_id
@@ -1990,6 +2145,20 @@ class TrackDecisionState:
                 self.last_real_frame = frame_num
             if row.has_valid_bbox:
                 self.last_bbox_xyxy = list(row.bbox_xyxy)
+        if decision_row_path == "light_out" and self.state == STATE_OUT:
+            self.candidate_streak = 0
+            self.confirm_streak = 0
+            self.exit_streak = 0
+            self.grace_left = 0
+            continuity_id = self.active_event_id or f"track-{self.track_id}"
+            return self._build_light_out_record(
+                frame_num=frame_num,
+                ts_sec=ts_sec,
+                row=row,
+                roi_id=roi_id,
+                continuity_id=continuity_id,
+                decision_row_path=decision_row_path,
+            )
         if isinstance(pose_result.ankles, list):
             current_real_ankles_xy: dict[str, tuple[float, float]] = {}
             for ankle in pose_result.ankles:
@@ -2479,6 +2648,7 @@ class TrackDecisionState:
                 "exit_streak": int(self.exit_streak),
                 "grace_left": int(self.grace_left),
             },
+            "decision_row_path": decision_row_path,
         }
 
 
@@ -2621,6 +2791,414 @@ def should_emit_record(row: SidecarRow | None, record: dict[str, Any]) -> bool:
     return False
 
 
+def bbox_outside_expanded_roi_bounds(
+    *,
+    bbox_xyxy: list[float],
+    roi_cache: RoiCache,
+    margin_px: float,
+) -> tuple[bool, float]:
+    _require_decision_deps()
+    if roi_cache.poly.ndim != 2 or roi_cache.poly.shape[0] < 3:
+        return False, 0.0
+    roi_min_x = float(np.min(roi_cache.poly[:, 0])) - float(margin_px)
+    roi_max_x = float(np.max(roi_cache.poly[:, 0])) + float(margin_px)
+    roi_min_y = float(np.min(roi_cache.poly[:, 1])) - float(margin_px)
+    roi_max_y = float(np.max(roi_cache.poly[:, 1])) + float(margin_px)
+    x1, y1, x2, y2 = map(float, bbox_xyxy)
+    left_clearance = max(0.0, roi_min_x - x2)
+    right_clearance = max(0.0, x1 - roi_max_x)
+    top_clearance = max(0.0, roi_min_y - y2)
+    bottom_clearance = max(0.0, y1 - roi_max_y)
+    outside = bool(
+        x2 < roi_min_x
+        or x1 > roi_max_x
+        or y2 < roi_min_y
+        or y1 > roi_max_y
+    )
+    return outside, float(max(left_clearance, right_clearance, top_clearance, bottom_clearance))
+
+
+def fast_reject_distance_bucket(clearance_px: float) -> str:
+    clearance_px = float(clearance_px)
+    if clearance_px < 32.0:
+        return "lt32"
+    if clearance_px < 64.0:
+        return "32_63"
+    if clearance_px < 128.0:
+        return "64_127"
+    return "128_plus"
+
+
+def candidate_fast_reject_margin_px(params: DecisionParams) -> float:
+    return max(
+        float(params.cand_distance_sustain_px),
+        float(params.klt_confirm_boundary_max_distance_px),
+    ) + 12.0 + max(0.0, float(params.fast_reject_margin_add_px))
+
+
+def evaluate_candidate_fast_reject_gate(
+    *,
+    frame_num: int,
+    row: SidecarRow | None,
+    state: TrackDecisionState,
+    params: DecisionParams,
+    roi_cache: RoiCache,
+) -> dict[str, Any]:
+    result = {
+        "enabled": False,
+        "reason": "missing_or_invalid_row",
+        "bottom_center_xy": [],
+        "bottom_center_signed_distance_px": 0.0,
+        "clearance_px": 0.0,
+        "distance_bucket": "",
+        "margin_px": float(candidate_fast_reject_margin_px(params)),
+    }
+    if row is None or not row.has_valid_bbox:
+        return result
+    if row.mode != "real":
+        result["reason"] = "mode_not_real"
+        return result
+    if row.proxy_active:
+        result["reason"] = "proxy_active"
+        return result
+    if state.state != STATE_OUT:
+        result["reason"] = "state_not_out"
+        return result
+    if state.grace_left > 0 or state.exit_streak > 0 or state.confirm_streak > 0 or bool(state.active_event_id):
+        result["reason"] = "active_transition_context"
+        return result
+    if state.candidate_streak > 0:
+        result["reason"] = "candidate_streak_active"
+        return result
+
+    recent_candidate_context = bool(
+        state.last_candidate_context_frame is not None
+        and (int(frame_num) - int(state.last_candidate_context_frame))
+        <= max(1, int(params.klt_candidate_recent_context_frames))
+    )
+    if recent_candidate_context:
+        result["reason"] = "recent_candidate_context"
+        return result
+
+    anchor_source, _anchor_kind = classify_klt_anchor_source(str(row.pose_anchor_source or row.patch_source or "").strip())
+    flow_mag = float(row.flow_mag) if row.flow_mag else (abs(float(row.flow_dx)) + abs(float(row.flow_dy)))
+    continuity_sensitive = bool(
+        bbox_has_area_xyxy(row.patch_xyxy)
+        and bool(anchor_source)
+        and row.tracked_points >= max(1, int(params.klt_confirm_min_tracked_points))
+        and (
+            flow_mag >= float(params.klt_confirm_min_flow_mag)
+            or bool(str(row.patch_source or "").strip())
+        )
+    )
+    if continuity_sensitive:
+        result["reason"] = "continuity_sensitive"
+        return result
+    if row_has_loss_hint(row):
+        result["reason"] = "loss_hint_present"
+        return result
+
+    bottom_center_xy = bbox_bottom_center_xyxy(row.bbox_xyxy)
+    bottom_center_signed_distance_px = lookup_signed_distance_at_point(bottom_center_xy, roi_cache.signed_dist)
+    clearance_px = max(0.0, float(bottom_center_signed_distance_px))
+    result["bottom_center_xy"] = [round(float(bottom_center_xy[0]), 2), round(float(bottom_center_xy[1]), 2)]
+    result["bottom_center_signed_distance_px"] = round(float(bottom_center_signed_distance_px), 3)
+    result["clearance_px"] = round(float(clearance_px), 3)
+    if clearance_px <= float(result["margin_px"]):
+        result["reason"] = "inside_or_near_margin"
+        return result
+
+    result["enabled"] = True
+    result["reason"] = "enabled_far_bottom_center"
+    result["distance_bucket"] = fast_reject_distance_bucket(clearance_px)
+    return result
+
+
+def state_has_active_candidate_context(
+    *,
+    frame_num: int,
+    state: TrackDecisionState,
+    params: DecisionParams,
+) -> bool:
+    if state.state != STATE_OUT:
+        return True
+    if state.grace_left > 0 or state.exit_streak > 0 or state.confirm_streak > 0 or bool(state.active_event_id):
+        return True
+    if state.candidate_streak > 0:
+        return True
+    return bool(
+        state.last_candidate_context_frame is not None
+        and (int(frame_num) - int(state.last_candidate_context_frame))
+        <= max(1, int(params.klt_candidate_recent_context_frames))
+    )
+
+
+def classify_decision_row_path(
+    *,
+    frame_num: int,
+    row: SidecarRow | None,
+    state: TrackDecisionState,
+    params: DecisionParams,
+    roi_cache: RoiCache,
+    evidence: CandidateEvidence | None = None,
+    fast_reject_gate: dict[str, Any] | None = None,
+) -> str:
+    if evidence is None:
+        gate = fast_reject_gate or evaluate_candidate_fast_reject_gate(
+            frame_num=frame_num,
+            row=row,
+            state=state,
+            params=params,
+            roi_cache=roi_cache,
+        )
+        if gate["enabled"]:
+            return "light_out"
+        if not state_has_active_candidate_context(frame_num=frame_num, state=state, params=params):
+            if row is None or not row.has_valid_bbox:
+                return "light_out"
+            if row.mode in {"display_continuity", "real_support_only"}:
+                return "light_out"
+            if row.mode == "frozen_hold" and not row.proxy_active:
+                return "light_out"
+        return "pre_evidence_active"
+
+    if row is None or not row.has_valid_bbox:
+        return "medium_no_pose"
+    if row.mode == "display_continuity":
+        return "medium_no_pose"
+    if state.state == STATE_IN_CONFIRMED:
+        if state.active_confirm_basis == "ankle":
+            return "medium_no_pose"
+        return "rich_pose" if row.mode == "real" else "medium_no_pose"
+    if state.state == STATE_CANDIDATE:
+        if row.mode == "real":
+            return "rich_pose"
+        if row.mode in {"proxy", "frozen_hold"} and row.proxy_active:
+            ankle_critical = bool(
+                evidence.bottom_center_in_roi
+                or float(evidence.bbox_overlap) >= float(params.candidate_iou_or_overlap_thr)
+                or float(evidence.lower_band_overlap) >= float(params.candidate_iou_or_overlap_thr)
+                or float(evidence.roi_min_distance_px) <= float(params.cand_distance_enter_px)
+            )
+            return "rich_pose" if ankle_critical else "medium_no_pose"
+        return "medium_no_pose"
+    if state.state == STATE_OUT:
+        return "rich_pose" if row.mode == "real" and bool(evidence.candidate_geom) else "medium_no_pose"
+    return "medium_no_pose"
+
+
+def evaluate_fast_reject_candidate(
+    *,
+    row: SidecarRow | None,
+    state: TrackDecisionState,
+    params: DecisionParams,
+    roi_cache: RoiCache,
+) -> dict[str, Any]:
+    result = {
+        "eligible_row": False,
+        "outside_expanded_bounds": False,
+        "would_fast_reject": False,
+        "clearance_px": 0.0,
+        "distance_bucket": "",
+    }
+    if row is None or not row.has_valid_bbox:
+        return result
+    margin_px = max(float(params.cand_distance_enter_px), float(params.cand_distance_sustain_px))
+    outside_expanded_bounds, clearance_px = bbox_outside_expanded_roi_bounds(
+        bbox_xyxy=list(row.bbox_xyxy),
+        roi_cache=roi_cache,
+        margin_px=margin_px,
+    )
+    eligible_row = bool(row.mode == "real" and not row.proxy_active)
+    would_fast_reject = bool(eligible_row and state.state == STATE_OUT and outside_expanded_bounds)
+    result.update(
+        {
+            "eligible_row": bool(eligible_row),
+            "outside_expanded_bounds": bool(outside_expanded_bounds),
+            "would_fast_reject": bool(would_fast_reject),
+            "clearance_px": float(clearance_px),
+            "distance_bucket": fast_reject_distance_bucket(clearance_px) if outside_expanded_bounds else "",
+        }
+    )
+    return result
+
+
+def resolve_pose_probe_request(
+    *,
+    row: SidecarRow | None,
+    state: TrackDecisionState,
+    evidence: CandidateEvidence | None,
+) -> tuple[list[float] | None, str]:
+    pose_bbox_xyxy: list[float] | None = None
+    if evidence is not None and evidence.candidate_geom:
+        pose_bbox_xyxy = list(evidence.bbox_xyxy)
+    elif state.state in {STATE_CANDIDATE, STATE_IN_CONFIRMED} and row is not None and row.has_valid_bbox:
+        pose_bbox_xyxy = list(row.bbox_xyxy)
+
+    if row is not None and row.mode == "display_continuity":
+        return None, "pose_not_needed_display_continuity"
+    if state.state == STATE_IN_CONFIRMED:
+        if state.active_confirm_basis == "ankle":
+            return None, "pose_not_needed_in_confirmed_ankle"
+        if row is not None and row.mode != "real":
+            return None, "pose_not_needed_in_confirmed_nonreal"
+        if pose_bbox_xyxy is not None:
+            return pose_bbox_xyxy, ""
+        return None, "pose_upgrade_no_bbox"
+    if pose_bbox_xyxy is None:
+        return None, "pose_not_needed_no_bbox" if state.state == STATE_CANDIDATE else "pose_not_needed"
+    return pose_bbox_xyxy, ""
+
+
+@dataclass(frozen=True)
+class DecisionRowPlan:
+    fast_reject_gate: dict[str, Any]
+    evidence: CandidateEvidence | None
+    decision_row_path: str
+    pose_bbox_xyxy: list[float] | None
+    pose_skip_status: str
+
+
+def plan_decision_row(
+    *,
+    frame_num: int,
+    row: SidecarRow | None,
+    state: TrackDecisionState,
+    params: DecisionParams,
+    roi_cache: RoiCache,
+    feature_cfg: FeatureConfig,
+    score_weights: ScoreWeights,
+    image_w: int,
+    image_h: int,
+) -> DecisionRowPlan:
+    fast_reject_gate = evaluate_candidate_fast_reject_gate(
+        frame_num=frame_num,
+        row=row,
+        state=state,
+        params=params,
+        roi_cache=roi_cache,
+    )
+    if fast_reject_gate["enabled"]:
+        evidence = None
+        decision_row_path = "light_out"
+    else:
+        pre_path = classify_decision_row_path(
+            frame_num=frame_num,
+            row=row,
+            state=state,
+            params=params,
+            roi_cache=roi_cache,
+            fast_reject_gate=fast_reject_gate,
+        )
+        if pre_path == "light_out":
+            evidence = None
+            decision_row_path = "light_out"
+        else:
+            evidence = build_candidate_evidence(
+                row=row,
+                state=state,
+                params=params,
+                roi_cache=roi_cache,
+                feature_cfg=feature_cfg,
+                score_weights=score_weights,
+                image_w=image_w,
+                image_h=image_h,
+            )
+            decision_row_path = classify_decision_row_path(
+                frame_num=frame_num,
+                row=row,
+                state=state,
+                params=params,
+                roi_cache=roi_cache,
+                evidence=evidence,
+                fast_reject_gate=fast_reject_gate,
+            )
+    pose_bbox_xyxy, pose_skip_status = resolve_pose_probe_request(
+        row=row,
+        state=state,
+        evidence=evidence,
+    )
+    if decision_row_path == "medium_no_pose":
+        pose_bbox_xyxy = None
+        pose_skip_status = "pose_not_needed_medium_no_pose"
+    elif decision_row_path == "light_out":
+        pose_bbox_xyxy = None
+        pose_skip_status = "pose_not_needed_light_out"
+    return DecisionRowPlan(
+        fast_reject_gate=fast_reject_gate,
+        evidence=evidence,
+        decision_row_path=decision_row_path,
+        pose_bbox_xyxy=list(pose_bbox_xyxy) if pose_bbox_xyxy is not None else None,
+        pose_skip_status=str(pose_skip_status),
+    )
+
+
+def row_plan_requires_frame_decode(
+    *,
+    row_plan: DecisionRowPlan,
+    pose_probe_enabled: bool,
+) -> bool:
+    return bool(pose_probe_enabled and not row_plan.pose_skip_status and row_plan.pose_bbox_xyxy is not None)
+
+
+def pose_probe_force_fresh_reason(
+    *,
+    row: SidecarRow | None,
+    state: TrackDecisionState,
+    row_plan: DecisionRowPlan,
+    params: DecisionParams,
+) -> str:
+    if row_plan.pose_bbox_xyxy is None or row_plan.pose_skip_status:
+        return "pose_not_needed"
+    if state.state == STATE_OUT and row_plan.evidence is not None and bool(row_plan.evidence.candidate_geom):
+        return "out_to_candidate_transition"
+    if state.state == STATE_CANDIDATE and int(state.candidate_streak) <= 1:
+        return "first_candidate_frame"
+    if (
+        row_plan.evidence is not None
+        and float(row_plan.evidence.roi_min_distance_px) <= float(params.cand_distance_enter_px)
+    ):
+        return "very_near_boundary"
+    if row is not None and row.mode == "real" and row.proxy_active:
+        return "proxy_active_real_row"
+    return ""
+
+
+def pose_probe_reuse_is_stable(
+    *,
+    prev_bbox_xyxy: list[float] | None,
+    next_bbox_xyxy: list[float] | None,
+    params: DecisionParams,
+) -> tuple[bool, float]:
+    if prev_bbox_xyxy is None or next_bbox_xyxy is None:
+        return False, 0.0
+    if not bbox_has_area_xyxy(prev_bbox_xyxy) or not bbox_has_area_xyxy(next_bbox_xyxy):
+        return False, 0.0
+    prev_center = bbox_center_xyxy(prev_bbox_xyxy)
+    next_center = bbox_center_xyxy(next_bbox_xyxy)
+    center_shift = float(((next_center[0] - prev_center[0]) ** 2 + (next_center[1] - prev_center[1]) ** 2) ** 0.5)
+    prev_w = max(1.0, float(prev_bbox_xyxy[2]) - float(prev_bbox_xyxy[0]))
+    prev_h = max(1.0, float(prev_bbox_xyxy[3]) - float(prev_bbox_xyxy[1]))
+    next_w = max(1.0, float(next_bbox_xyxy[2]) - float(next_bbox_xyxy[0]))
+    next_h = max(1.0, float(next_bbox_xyxy[3]) - float(next_bbox_xyxy[1]))
+    shift_limit = max(
+        float(params.pose_probe_reuse_max_center_shift_px),
+        max(prev_w, prev_h, next_w, next_h) * float(params.pose_probe_reuse_max_center_shift_ratio),
+    )
+    area_ratio = float(bbox_area_xyxy(next_bbox_xyxy) / max(1.0, bbox_area_xyxy(prev_bbox_xyxy)))
+    aspect_ratio = float(
+        bbox_aspect_ratio_xyxy(next_bbox_xyxy) / max(1e-6, bbox_aspect_ratio_xyxy(prev_bbox_xyxy))
+    )
+    stable = bool(
+        center_shift <= shift_limit
+        and float(params.pose_probe_reuse_area_ratio_min) <= area_ratio <= float(params.pose_probe_reuse_area_ratio_max)
+        and float(params.pose_probe_reuse_aspect_ratio_min)
+        <= aspect_ratio
+        <= float(params.pose_probe_reuse_aspect_ratio_max)
+    )
+    return stable, center_shift
+
+
 def run_intrusion_decision_pass(
     *,
     video_path: str | Path,
@@ -2657,6 +3235,45 @@ def run_intrusion_decision_pass(
     emitted_count = 0
     confirmed_count = 0
     tracks_seen: set[int] = set()
+    pose_probe_attempt_count = 0
+    pose_probe_skipped_count = 0
+    pose_probe_sec = 0.0
+    pose_probe_skip_reasons: Counter[str] = Counter()
+    pose_probe_attempts_by_state: Counter[str] = Counter()
+    pose_probe_attempts_by_mode: Counter[str] = Counter()
+    would_fast_reject_count = 0
+    fast_reject_eligible_row_count = 0
+    fast_reject_outside_expanded_bounds_count = 0
+    would_fast_reject_by_state: Counter[str] = Counter()
+    would_fast_reject_by_mode: Counter[str] = Counter()
+    fast_reject_outside_by_state: Counter[str] = Counter()
+    fast_reject_outside_by_mode: Counter[str] = Counter()
+    would_fast_reject_distance_buckets: Counter[str] = Counter()
+    fast_reject_enabled_count = 0
+    fast_reject_by_state: Counter[str] = Counter()
+    fast_reject_by_mode: Counter[str] = Counter()
+    fast_reject_clearance_buckets: Counter[str] = Counter()
+    fast_reject_skip_reasons: Counter[str] = Counter()
+    fast_reject_bottom_center_signed_distance_buckets: Counter[str] = Counter()
+    candidate_event_counts: Counter[str] = Counter()
+    decision_light_out_rows = 0
+    decision_medium_no_pose_rows = 0
+    decision_rich_pose_rows = 0
+    decision_all_light_frames = 0
+    decision_any_rich_frames = 0
+    decision_update_light_sec = 0.0
+    decision_update_medium_sec = 0.0
+    decision_update_rich_sec = 0.0
+    pose_probe_attempts_by_row_path: Counter[str] = Counter()
+    lazy_decode_would_skip_count = 0
+    lazy_decode_would_read_count = 0
+    lazy_decode_would_skip_but_had_probe_count = 0
+    lazy_decode_skip_count = 0
+    lazy_decode_miss_count = 0
+    pose_probe_reuse_count = 0
+    pose_probe_forced_fresh_count = 0
+    pose_probe_forced_fresh_reasons: Counter[str] = Counter()
+    pose_probe_reuse_bbox_shift_max = 0.0
 
     events_path_obj = Path(events_path)
     events_path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -2664,10 +3281,6 @@ def run_intrusion_decision_pass(
     with events_path_obj.open("w", encoding="utf-8") as f:
         frame_num = 0
         while True:
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                break
-
             frame_rows = rows_by_frame.get(frame_num, {})
             active_track_ids = set(frame_rows.keys())
             active_track_ids.update(
@@ -2675,43 +3288,233 @@ def run_intrusion_decision_pass(
                 for (track_id, ctx) in contexts.items()
                 if ctx.state != STATE_OUT or ctx.grace_left > 0 or ctx.exit_streak > 0
             )
+            active_track_ids_sorted = sorted(active_track_ids)
 
-            for track_id in sorted(active_track_ids):
-                row = frame_rows.get(track_id)
-                ctx = contexts.setdefault(track_id, TrackDecisionState(track_id=track_id))
-                evidence = build_candidate_evidence(
-                    row=row,
-                    state=ctx,
-                    params=params,
-                    roi_cache=roi_cache,
-                    feature_cfg=feature_cfg,
-                    score_weights=score_weights,
-                    image_w=width,
-                    image_h=height,
-                )
+            if params.enable_decision_lazy_decode:
+                frame_plans: dict[int, tuple[SidecarRow | None, TrackDecisionState, DecisionRowPlan]] = {}
+                frame_row_paths: list[str] = []
+                frame_would_read = False
+                for track_id in active_track_ids_sorted:
+                    row = frame_rows.get(track_id)
+                    ctx = contexts.setdefault(track_id, TrackDecisionState(track_id=track_id))
+                    fast_reject_diag = evaluate_fast_reject_candidate(
+                        row=row,
+                        state=ctx,
+                        params=params,
+                        roi_cache=roi_cache,
+                    )
+                    if fast_reject_diag["eligible_row"]:
+                        fast_reject_eligible_row_count += 1
+                    if fast_reject_diag["outside_expanded_bounds"]:
+                        fast_reject_outside_expanded_bounds_count += 1
+                        fast_reject_outside_by_state[ctx.state] += 1
+                        fast_reject_outside_by_mode[str(row.mode) if row is not None else "none"] += 1
+                        distance_bucket = str(fast_reject_diag["distance_bucket"]).strip()
+                        if distance_bucket:
+                            would_fast_reject_distance_buckets[distance_bucket] += 1
+                    if fast_reject_diag["would_fast_reject"]:
+                        would_fast_reject_count += 1
+                        would_fast_reject_by_state[ctx.state] += 1
+                        would_fast_reject_by_mode[str(row.mode) if row is not None else "none"] += 1
 
-                pose_bbox_xyxy: list[float] | None = None
-                if evidence is not None and evidence.candidate_geom:
-                    pose_bbox_xyxy = list(evidence.bbox_xyxy)
-                elif ctx.state in {STATE_CANDIDATE, STATE_IN_CONFIRMED} and row is not None and row.has_valid_bbox:
-                    pose_bbox_xyxy = list(row.bbox_xyxy)
+                    row_plan = plan_decision_row(
+                        frame_num=frame_num,
+                        row=row,
+                        state=ctx,
+                        params=params,
+                        roi_cache=roi_cache,
+                        feature_cfg=feature_cfg,
+                        score_weights=score_weights,
+                        image_w=width,
+                        image_h=height,
+                    )
+                    fast_reject_gate = row_plan.fast_reject_gate
+                    fast_reject_skip_reasons[str(fast_reject_gate["reason"])] += 1
+                    signed_distance_px = float(fast_reject_gate["bottom_center_signed_distance_px"])
+                    if signed_distance_px > 0.0:
+                        fast_reject_bottom_center_signed_distance_buckets[fast_reject_distance_bucket(signed_distance_px)] += 1
+                    if fast_reject_gate["enabled"]:
+                        fast_reject_enabled_count += 1
+                        fast_reject_by_state[ctx.state] += 1
+                        fast_reject_by_mode[str(row.mode) if row is not None else "none"] += 1
+                        distance_bucket = str(fast_reject_gate["distance_bucket"]).strip()
+                        if distance_bucket:
+                            fast_reject_clearance_buckets[distance_bucket] += 1
+
+                    decision_row_path = row_plan.decision_row_path
+                    frame_row_paths.append(decision_row_path)
+                    if decision_row_path == "light_out":
+                        decision_light_out_rows += 1
+                    elif decision_row_path == "medium_no_pose":
+                        decision_medium_no_pose_rows += 1
+                    else:
+                        decision_rich_pose_rows += 1
+                    if row_plan_requires_frame_decode(row_plan=row_plan, pose_probe_enabled=pose_probe is not None):
+                        frame_would_read = True
+                    frame_plans[track_id] = (row, ctx, row_plan)
+
+                if frame_would_read:
+                    lazy_decode_would_read_count += 1
+                    ok, frame = cap.read()
+                else:
+                    lazy_decode_would_skip_count += 1
+                    ok = cap.grab()
+                    frame = None
+                    if ok:
+                        lazy_decode_skip_count += 1
+                if not ok:
+                    break
+            else:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    break
+                frame_plans = {}
+                frame_row_paths = []
+                frame_would_read = False
+                for track_id in active_track_ids_sorted:
+                    row = frame_rows.get(track_id)
+                    ctx = contexts.setdefault(track_id, TrackDecisionState(track_id=track_id))
+                    fast_reject_diag = evaluate_fast_reject_candidate(
+                        row=row,
+                        state=ctx,
+                        params=params,
+                        roi_cache=roi_cache,
+                    )
+                    if fast_reject_diag["eligible_row"]:
+                        fast_reject_eligible_row_count += 1
+                    if fast_reject_diag["outside_expanded_bounds"]:
+                        fast_reject_outside_expanded_bounds_count += 1
+                        fast_reject_outside_by_state[ctx.state] += 1
+                        fast_reject_outside_by_mode[str(row.mode) if row is not None else "none"] += 1
+                        distance_bucket = str(fast_reject_diag["distance_bucket"]).strip()
+                        if distance_bucket:
+                            would_fast_reject_distance_buckets[distance_bucket] += 1
+                    if fast_reject_diag["would_fast_reject"]:
+                        would_fast_reject_count += 1
+                        would_fast_reject_by_state[ctx.state] += 1
+                        would_fast_reject_by_mode[str(row.mode) if row is not None else "none"] += 1
+
+                    row_plan = plan_decision_row(
+                        frame_num=frame_num,
+                        row=row,
+                        state=ctx,
+                        params=params,
+                        roi_cache=roi_cache,
+                        feature_cfg=feature_cfg,
+                        score_weights=score_weights,
+                        image_w=width,
+                        image_h=height,
+                    )
+                    fast_reject_gate = row_plan.fast_reject_gate
+                    fast_reject_skip_reasons[str(fast_reject_gate["reason"])] += 1
+                    signed_distance_px = float(fast_reject_gate["bottom_center_signed_distance_px"])
+                    if signed_distance_px > 0.0:
+                        fast_reject_bottom_center_signed_distance_buckets[fast_reject_distance_bucket(signed_distance_px)] += 1
+                    if fast_reject_gate["enabled"]:
+                        fast_reject_enabled_count += 1
+                        fast_reject_by_state[ctx.state] += 1
+                        fast_reject_by_mode[str(row.mode) if row is not None else "none"] += 1
+                        distance_bucket = str(fast_reject_gate["distance_bucket"]).strip()
+                        if distance_bucket:
+                            fast_reject_clearance_buckets[distance_bucket] += 1
+
+                    decision_row_path = row_plan.decision_row_path
+                    frame_row_paths.append(decision_row_path)
+                    if decision_row_path == "light_out":
+                        decision_light_out_rows += 1
+                    elif decision_row_path == "medium_no_pose":
+                        decision_medium_no_pose_rows += 1
+                    else:
+                        decision_rich_pose_rows += 1
+                    if row_plan_requires_frame_decode(row_plan=row_plan, pose_probe_enabled=pose_probe is not None):
+                        frame_would_read = True
+                    frame_plans[track_id] = (row, ctx, row_plan)
+
+                if frame_would_read:
+                    lazy_decode_would_read_count += 1
+                else:
+                    lazy_decode_would_skip_count += 1
+
+            frame_pose_probe_attempts = 0
+            frame_retrieved_after_skip = False
+            for track_id in active_track_ids_sorted:
+                row, ctx, row_plan = frame_plans[track_id]
+                evidence = row_plan.evidence
+                decision_row_path = row_plan.decision_row_path
+                pose_bbox_xyxy = list(row_plan.pose_bbox_xyxy) if row_plan.pose_bbox_xyxy is not None else None
+                pose_skip_status = str(row_plan.pose_skip_status)
+                pose_result: PoseProbeResult
 
                 if pose_probe is None:
                     pose_result = PoseProbeResult.skipped("pose_probe_disabled")
-                elif ctx.state == STATE_IN_CONFIRMED:
-                    if ctx.active_confirm_basis == "ankle":
-                        pose_result = PoseProbeResult.skipped("pose_not_needed_in_confirmed_ankle")
-                    elif pose_bbox_xyxy is not None:
-                        pose_result = pose_probe.probe(frame=frame, bbox_xyxy=pose_bbox_xyxy)
-                    else:
-                        pose_result = PoseProbeResult.skipped("pose_upgrade_no_bbox")
-                elif pose_bbox_xyxy is None:
-                    pose_result = PoseProbeResult.skipped(
-                        "pose_not_needed_no_bbox" if ctx.state == STATE_CANDIDATE else "pose_not_needed"
-                    )
+                    pose_probe_skipped_count += 1
+                    pose_probe_skip_reasons["pose_probe_disabled"] += 1
+                elif pose_skip_status:
+                    pose_result = PoseProbeResult.skipped(pose_skip_status)
+                    pose_probe_skipped_count += 1
+                    pose_probe_skip_reasons[pose_skip_status] += 1
                 else:
-                    pose_result = pose_probe.probe(frame=frame, bbox_xyxy=pose_bbox_xyxy)
+                    reuse_applied = False
+                    if params.enable_pose_probe_reuse:
+                        force_fresh_reason = pose_probe_force_fresh_reason(
+                            row=row,
+                            state=ctx,
+                            row_plan=row_plan,
+                            params=params,
+                        )
+                        if force_fresh_reason:
+                            pose_probe_forced_fresh_count += 1
+                            pose_probe_forced_fresh_reasons[force_fresh_reason] += 1
+                        elif (
+                            ctx.last_pose_probe_result is not None
+                            and ctx.last_pose_probe_frame is not None
+                            and ctx.last_pose_probe_bbox_xyxy is not None
+                            and (int(frame_num) - int(ctx.last_pose_probe_frame))
+                            <= max(1, int(params.pose_probe_reuse_ttl_frames))
+                        ):
+                            stable_reuse, bbox_shift = pose_probe_reuse_is_stable(
+                                prev_bbox_xyxy=ctx.last_pose_probe_bbox_xyxy,
+                                next_bbox_xyxy=pose_bbox_xyxy,
+                                params=params,
+                            )
+                            if stable_reuse:
+                                pose_result = ctx.last_pose_probe_result
+                                reuse_applied = True
+                                pose_probe_reuse_count += 1
+                                pose_probe_reuse_bbox_shift_max = max(pose_probe_reuse_bbox_shift_max, float(bbox_shift))
+                            else:
+                                pose_probe_forced_fresh_count += 1
+                                pose_probe_forced_fresh_reasons["bbox_not_stable"] += 1
+                        else:
+                            pose_probe_forced_fresh_count += 1
+                            pose_probe_forced_fresh_reasons["no_recent_cache"] += 1
+                    if not reuse_applied:
+                        if frame is None and params.enable_decision_lazy_decode and not frame_retrieved_after_skip:
+                            ok, retrieved_frame = cap.retrieve()
+                            if not ok or retrieved_frame is None:
+                                lazy_decode_miss_count += 1
+                                frame = None
+                                break
+                            frame = retrieved_frame
+                            frame_retrieved_after_skip = True
+                            lazy_decode_miss_count += 1
+                        if frame is None:
+                            lazy_decode_miss_count += 1
+                            break
+                        pose_probe_attempt_count += 1
+                        frame_pose_probe_attempts += 1
+                        pose_probe_attempts_by_state[ctx.state] += 1
+                        pose_probe_attempts_by_mode[str(row.mode) if row is not None else "none"] += 1
+                        pose_probe_attempts_by_row_path[decision_row_path] += 1
+                        probe_started_at = time.perf_counter()
+                        pose_result = pose_probe.probe(frame=frame, bbox_xyxy=pose_bbox_xyxy)
+                        pose_probe_sec += time.perf_counter() - probe_started_at
+                        if params.enable_pose_probe_reuse:
+                            ctx.last_pose_probe_frame = int(frame_num)
+                            ctx.last_pose_probe_bbox_xyxy = list(pose_bbox_xyxy) if pose_bbox_xyxy is not None else None
+                            ctx.last_pose_probe_result = pose_result
 
+                update_started_at = time.perf_counter()
                 record = ctx.update(
                     frame_num=frame_num,
                     ts_sec=float(frame_num) / max(1e-6, fps),
@@ -2721,14 +3524,33 @@ def run_intrusion_decision_pass(
                     params=params,
                     roi_id=roi_meta["roi_id"],
                     roi_cache=roi_cache,
+                    decision_row_path=decision_row_path,
                 )
+                update_elapsed = time.perf_counter() - update_started_at
+                if decision_row_path == "light_out":
+                    decision_update_light_sec += update_elapsed
+                elif decision_row_path == "medium_no_pose":
+                    decision_update_medium_sec += update_elapsed
+                else:
+                    decision_update_rich_sec += update_elapsed
 
                 if should_emit_record(row=row, record=record):
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
                     emitted_count += 1
                     tracks_seen.add(track_id)
+                    candidate_event_counts[str(record.get("event_type", "")).strip() or "none"] += 1
                     if str(record.get("event_type", "")) == "in_confirmed":
                         confirmed_count += 1
+
+            if not params.enable_decision_lazy_decode and frame_would_read is False and frame_pose_probe_attempts > 0:
+                lazy_decode_would_skip_but_had_probe_count += 1
+            elif params.enable_decision_lazy_decode and frame_would_read is False and frame_pose_probe_attempts > 0:
+                lazy_decode_would_skip_but_had_probe_count += 1
+
+            if frame_row_paths and all(path == "light_out" for path in frame_row_paths):
+                decision_all_light_frames += 1
+            if any(path == "rich_pose" for path in frame_row_paths):
+                decision_any_rich_frames += 1
 
             frame_num += 1
 
@@ -2758,6 +3580,48 @@ def run_intrusion_decision_pass(
         "confirmed_events": int(confirmed_count),
         "open_tracks_at_video_end": open_tracks,
         "pose_probe_status": pose_probe.model_status if pose_probe is not None else "pose_probe_disabled",
+        "pose_probe_attempt_count": int(pose_probe_attempt_count),
+        "pose_probe_skipped_count": int(pose_probe_skipped_count),
+        "pose_probe_sec": round(float(pose_probe_sec), 6),
+        "pose_probe_skip_reasons": dict(pose_probe_skip_reasons),
+        "pose_probe_attempts_by_state": dict(pose_probe_attempts_by_state),
+        "pose_probe_attempts_by_mode": dict(pose_probe_attempts_by_mode),
+        "would_fast_reject_count": int(would_fast_reject_count),
+        "would_fast_reject_eligible_row_count": int(fast_reject_eligible_row_count),
+        "would_fast_reject_outside_expanded_bounds_count": int(fast_reject_outside_expanded_bounds_count),
+        "would_fast_reject_by_state": dict(would_fast_reject_by_state),
+        "would_fast_reject_by_mode": dict(would_fast_reject_by_mode),
+        "would_fast_reject_outside_by_state": dict(fast_reject_outside_by_state),
+        "would_fast_reject_outside_by_mode": dict(fast_reject_outside_by_mode),
+        "would_fast_reject_distance_buckets": dict(would_fast_reject_distance_buckets),
+        "fast_reject_margin_px": round(float(candidate_fast_reject_margin_px(params)), 3),
+        "fast_reject_enabled_count": int(fast_reject_enabled_count),
+        "fast_reject_by_state": dict(fast_reject_by_state),
+        "fast_reject_by_mode": dict(fast_reject_by_mode),
+        "fast_reject_clearance_buckets": dict(fast_reject_clearance_buckets),
+        "fast_reject_skip_reasons": dict(fast_reject_skip_reasons),
+        "fast_reject_bottom_center_signed_distance_buckets": dict(
+            fast_reject_bottom_center_signed_distance_buckets
+        ),
+        "candidate_event_counts": dict(candidate_event_counts),
+        "decision_light_out_rows": int(decision_light_out_rows),
+        "decision_medium_no_pose_rows": int(decision_medium_no_pose_rows),
+        "decision_rich_pose_rows": int(decision_rich_pose_rows),
+        "decision_all_light_frames": int(decision_all_light_frames),
+        "decision_any_rich_frames": int(decision_any_rich_frames),
+        "decision_update_light_sec": round(float(decision_update_light_sec), 6),
+        "decision_update_medium_sec": round(float(decision_update_medium_sec), 6),
+        "decision_update_rich_sec": round(float(decision_update_rich_sec), 6),
+        "pose_probe_attempts_by_row_path": dict(pose_probe_attempts_by_row_path),
+        "lazy_decode_would_skip_count": int(lazy_decode_would_skip_count),
+        "lazy_decode_would_read_count": int(lazy_decode_would_read_count),
+        "lazy_decode_would_skip_but_had_probe_count": int(lazy_decode_would_skip_but_had_probe_count),
+        "lazy_decode_skip_count": int(lazy_decode_skip_count),
+        "lazy_decode_miss_count": int(lazy_decode_miss_count),
+        "pose_probe_reuse_count": int(pose_probe_reuse_count),
+        "pose_probe_forced_fresh_count": int(pose_probe_forced_fresh_count),
+        "pose_probe_forced_fresh_reasons": dict(pose_probe_forced_fresh_reasons),
+        "pose_probe_reuse_bbox_shift_max": round(float(pose_probe_reuse_bbox_shift_max), 6),
         "decision_params": {
             "candidate_enter_n": int(params.candidate_enter_n),
             "confirm_enter_n": int(params.confirm_enter_n),
@@ -2798,6 +3662,18 @@ def run_intrusion_decision_pass(
             "klt_candidate_accum_min_head_support_frames": int(params.klt_candidate_accum_min_head_support_frames),
             "klt_candidate_accum_min_motion_frames": int(params.klt_candidate_accum_min_motion_frames),
             "klt_candidate_accum_min_progression_frames": int(params.klt_candidate_accum_min_progression_frames),
+            "fast_reject_margin_add_px": float(params.fast_reject_margin_add_px),
+            "enable_pose_probe_reuse": bool(params.enable_pose_probe_reuse),
+            "pose_probe_reuse_ttl_frames": int(params.pose_probe_reuse_ttl_frames),
+            "pose_probe_reuse_max_center_shift_px": float(params.pose_probe_reuse_max_center_shift_px),
+            "pose_probe_reuse_max_center_shift_ratio": float(params.pose_probe_reuse_max_center_shift_ratio),
+            "pose_probe_reuse_area_ratio_min": float(params.pose_probe_reuse_area_ratio_min),
+            "pose_probe_reuse_area_ratio_max": float(params.pose_probe_reuse_area_ratio_max),
+            "pose_probe_reuse_aspect_ratio_min": float(params.pose_probe_reuse_aspect_ratio_min),
+            "pose_probe_reuse_aspect_ratio_max": float(params.pose_probe_reuse_aspect_ratio_max),
+            "enable_decision_lazy_decode": bool(params.enable_decision_lazy_decode),
+            "enable_klt_boundary_band_tightening": bool(params.enable_klt_boundary_band_tightening),
+            "klt_boundary_band_scale_mult": float(params.klt_boundary_band_scale_mult),
             "klt_candidate_accum_min_motion_toward_score": float(params.klt_candidate_accum_min_motion_toward_score),
             "klt_candidate_accum_max_roi_distance_px": float(params.klt_candidate_accum_max_roi_distance_px),
             "klt_candidate_accum_ready_hold_frames": int(params.klt_candidate_accum_ready_hold_frames),

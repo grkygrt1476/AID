@@ -1,0 +1,452 @@
+[
+  {
+    "scene_id": "E01_001",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_002",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_002/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_003",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_003/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_009",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_009/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_022",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_022/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_024",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_024/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_025",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_025/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_027",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_027/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_029",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_029/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_034",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_034/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_040",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_040/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_041",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_041/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_042",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_042/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_044",
+    "group_id": 1,
+    "donor_scene_id": "E01_001",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_001/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_044/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_004",
+    "group_id": 2,
+    "donor_scene_id": "E01_004",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_004/roi_area01_v1_fix.json",
+    "target_resolution": "1280x720",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_004/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_005",
+    "group_id": 3,
+    "donor_scene_id": "E01_005",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_005/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_005/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_006",
+    "group_id": 3,
+    "donor_scene_id": "E01_005",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_005/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_006/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_007",
+    "group_id": 3,
+    "donor_scene_id": "E01_005",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_005/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_007/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_032",
+    "group_id": 3,
+    "donor_scene_id": "E01_005",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_005/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_032/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_008",
+    "group_id": 4,
+    "donor_scene_id": "E01_008",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_008/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_008/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_010",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_011",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_011/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_012",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_012/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_013",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_013/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_015",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_015/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_017",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_017/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_019",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_019/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_023",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_023/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_033",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_033/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_035",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_035/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_036",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_036/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_037",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_037/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_039",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_039/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_043",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_043/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_045",
+    "group_id": 5,
+    "donor_scene_id": "E01_010",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_010/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_045/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_014",
+    "group_id": 6,
+    "donor_scene_id": "E01_014",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_016",
+    "group_id": 6,
+    "donor_scene_id": "E01_014",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_016/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_018",
+    "group_id": 6,
+    "donor_scene_id": "E01_014",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_018/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_020",
+    "group_id": 6,
+    "donor_scene_id": "E01_014",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_020/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_021",
+    "group_id": 6,
+    "donor_scene_id": "E01_014",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_021/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_038",
+    "group_id": 6,
+    "donor_scene_id": "E01_014",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_014/roi_area01_v1_fix.json",
+    "target_resolution": "1920x1080",
+    "action": "kept_existing_fix",
+    "reason": "already canonical",
+    "output_path": "/home/kihun/AID/configs/rois/E01_038/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_026",
+    "group_id": 7,
+    "donor_scene_id": "E01_026",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_026/roi_area01_v1.json",
+    "target_resolution": "1920x1080",
+    "action": "created_fix",
+    "reason": "no existing _fix",
+    "output_path": "/home/kihun/AID/configs/rois/E01_026/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_028",
+    "group_id": 7,
+    "donor_scene_id": "E01_026",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_026/roi_area01_v1.json",
+    "target_resolution": "1920x1080",
+    "action": "created_fix",
+    "reason": "no existing _fix",
+    "output_path": "/home/kihun/AID/configs/rois/E01_028/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_030",
+    "group_id": 7,
+    "donor_scene_id": "E01_026",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_026/roi_area01_v1.json",
+    "target_resolution": "1920x1080",
+    "action": "created_fix",
+    "reason": "no existing _fix",
+    "output_path": "/home/kihun/AID/configs/rois/E01_030/roi_area01_v1_fix.json"
+  },
+  {
+    "scene_id": "E01_031",
+    "group_id": 8,
+    "donor_scene_id": "E01_031",
+    "donor_file_used": "/home/kihun/AID/configs/rois/E01_031/roi_area01_v1.json",
+    "target_resolution": "1920x1080",
+    "action": "created_fix",
+    "reason": "no existing _fix",
+    "output_path": "/home/kihun/AID/configs/rois/E01_031/roi_area01_v1_fix.json"
+  }
+]

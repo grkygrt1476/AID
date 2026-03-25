@@ -1,0 +1,30 @@
+{
+  "video_id": "E01_004",
+  "roi_id": "area01",
+  "roi_version": 1,
+  "roi_type": "AREA",
+  "vertices_px": [
+    [
+      110,
+      596
+    ],
+    [
+      46,
+      694
+    ],
+    [
+      1,
+      692
+    ],
+    [
+      4,
+      557
+    ]
+  ],
+  "image_size": {
+    "width": 1280,
+    "height": 720
+  },
+  "labeled_on": "orig",
+  "created_at": "2026-03-23T16:06:54"
+}

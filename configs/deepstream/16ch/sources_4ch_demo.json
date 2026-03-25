@@ -1,0 +1,44 @@
+{
+  "manifest_version": 1,
+  "manifest_name": "stage04_4ch_smoke_demo",
+  "runner_profile": "4ch_smoke",
+  "core_batch_size": 4,
+  "sources": [
+    {
+      "source_id": "E01_001",
+      "artifact_name": "E01_001__ev00_f1826-2854_50s",
+      "video_path": "data/clips/E01_001/ev00_f1826-2854_50s.mp4",
+      "roi_json": "configs/rois/E01_001/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "clean_success", "demo_priority"],
+      "notes": "Current Stage 04 baseline smoke-test source."
+    },
+    {
+      "source_id": "E01_004",
+      "artifact_name": "E01_004__ev00_f1803-1868_50s",
+      "video_path": "data/clips/E01_004/ev00_f1803-1868_50s.mp4",
+      "roi_json": "configs/rois/E01_004/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "resolution_exception", "demo_priority"],
+      "notes": "Baseline smoke-test source with 1280x720 geometry."
+    },
+    {
+      "source_id": "E01_008",
+      "artifact_name": "E01_008__ev00_f1899-2191_50s",
+      "video_path": "data/clips/E01_008/ev00_f1899-2191_50s.mp4",
+      "roi_json": "configs/rois/E01_008/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "clean_success", "demo_priority"],
+      "notes": "Current Stage 04 baseline smoke-test source."
+    },
+    {
+      "source_id": "E01_011",
+      "artifact_name": "E01_011__ev00_f2031-2293_50s",
+      "video_path": "data/clips/E01_011/ev00_f2031-2293_50s.mp4",
+      "roi_json": "configs/rois/E01_011/roi_area01_v1_fix.json",
+      "enabled": true,
+      "tags": ["baseline", "clean_success", "demo_priority"],
+      "notes": "Current Stage 04 baseline smoke-test source."
+    }
+  ]
+}
