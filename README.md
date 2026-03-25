@@ -101,13 +101,8 @@ configs/
   deepstream/               DeepStream pipeline and detector configs
   trackers/                 Tracker parameter configs
   intrusion/                FSM thresholds and scoring weights
-  rois/                     Per-camera ROI polygon definitions (cleaned subset; some Stage 04 paths still use legacy ROI locations)
   cameras/                  Per-camera stabilization parameters
 
-data/
-  videos/rois/            Legacy ROI location still referenced by some Stage 04 paths
-
-archive/                    Superseded experiments (kept for reference)
 ```
 
 Note: the source directories were renamed to 03_ds_single_stream and 04_ds_multi_stream for clarity. Existing historical outputs and logs may still remain under outputs/03_deepstream and outputs/04_deepstream for backward compatibility.
@@ -123,8 +118,6 @@ Representative Stage 04 runs produce the following artifacts:
 
 A useful evaluation slice for this repository is a Stage 03 vs Stage 04 comparison on the same clip, together with per-clip ground-truth intrusion counts versus confirmed event counts.
 
-Further technical details on output fields, row semantics, and debugging can be documented in `docs/STAGE04_INTERNALS.md`.
-
 ## Tech stack
 
 - **Detection**: YOLO11s (Ultralytics), exported to ONNX/TensorRT
@@ -134,10 +127,6 @@ Further technical details on output fields, row semantics, and debugging can be 
 - **Plugins**: custom GStreamer elements written in C++ across the DeepStream stages
 - **Decision logic**: Python FSM and scoring modules for event-level intrusion judgment
 - **Infrastructure**: Docker (DeepStream NGC container), CUDA 12.8, TensorRT
-
-## Setup
-
-Setup details, weight provisioning, and run instructions should be documented in docs/SETUP.md.
 
 ## 16-channel burst benchmark
 
@@ -167,13 +156,10 @@ With a decision-pass lazy decode optimization enabled (skipping full frame decod
 
 A render-side model budget cap was also tested. While it achieved similar throughput and reduced tail latency, it was excluded from the headline result because the budget was set too aggressively and starved confirmed-state tracks of keypoint refresh -- a guardrail violation that, while not affecting event counts in this run, would not be acceptable in production.
 
-Full experiment data is available in `outputs/04_deepstream/` under the `20260324_baseline_232545`, `20260324_b1_232744`, `20260324_b2_232932`, and `20260324_b3_light_233300` run directories. A compact comparison is in `outputs/analysis/exp_compare_latest.md`.
-
 ## Further technical details
 
 - `docs/stage03/README.md` -- Stage 03 single-stream semantics: the continuity-vs-truth problem, why event-level intrusion is harder than per-frame detection, and how the FSM confirmation logic was developed in a controlled single-stream setting before being carried to multistream.
 - `docs/stage04/README.md` -- Stage 04 multistream architecture and the 16-channel benchmark: pipeline structure, runner/core separation, bottleneck interpretation, and how to read the benchmark results.
-- `outputs/analysis/exp_compare_latest.md` -- compact experiment comparison table across the benchmark variants.
 
 Further internal notes on decision FSM fields, sidecar row semantics, and render-side recovery logic may be documented in `docs/STAGE04_INTERNALS.md` in the future.
 
