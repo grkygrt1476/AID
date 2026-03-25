@@ -29,6 +29,10 @@ So the design goal was to preserve an ankle-centered intrusion definition withou
 
 The pipeline runs on NVIDIA DeepStream (GStreamer-based, GPU-accelerated) and processes four camera streams simultaneously:
 
+<p align="center">
+  <img src="docs/assets/stage04_demo_24_31_readme.gif" alt="Stage 04 multistream tiled demo" width="720">
+</p>
+
 ```
 4 RTSP/file sources
   --> person detection and tracking
