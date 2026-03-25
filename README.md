@@ -33,13 +33,20 @@ The pipeline runs on NVIDIA DeepStream (GStreamer-based, GPU-accelerated) and pr
   <img src="docs/assets/stage04_demo_18_33_readme.gif" alt="Stage 04 multistream tiled demo" width="720">
 </p>
 
+```mermaid
+flowchart LR
+    A["4 CCTV Streams"] --> B["NVIDIA DeepStream"]
+    B --> C["YOLO11s Detector<br/>TensorRT"]
+    C --> D["NvDCF Tracker"]
+    D --> E["Custom GStreamer Plugins<br/>monitoring / intrusion metadata"]
+    E --> F["nvosd / tiled operator view"]
+    D --> G["Tracking sidecar export"]
+    G --> H["KLT continuity + gated reacquisition"]
+    H --> I["Event-level FSM<br/>OUT → CANDIDATE → IN_CONFIRMED"]
+    I --> J["intrusion_events.jsonl<br/>intrusion_summary.json"]
+    F --> K["tiled boundary_reacquire video"]
 ```
-4 RTSP/file sources
-  --> person detection and tracking
-  --> boundary-aware occlusion handling
-  --> event-level intrusion decision
-  --> output artifacts (events, summaries, overlay video)
-```
+
 
 ### Key design decisions
 
